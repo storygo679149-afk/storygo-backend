@@ -1,5 +1,5 @@
 {
-  "name": "pocket-fm-server",
+  "name": "story-go-server",
   "version": "1.0.0",
   "description": "Advanced audio storytelling platform backend",
   "main": "index.js",
