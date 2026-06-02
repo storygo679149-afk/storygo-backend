@@ -102,7 +102,5 @@ const initializeDatabase = async () => {
   }
 };
 
-// Test connection immediately
-testConnection();
 
 module.exports = { pool, query, getClient, initializeDatabase, testConnection };
