@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const pool = require('../config/database'); // apna existing db pool
+const pool = require('../config/database');
 const { generateOTP, getOTPExpiry } = require('../utils/otpHelper');
 const { sendOTPEmail } = require('../utils/emailService');
 
@@ -36,7 +36,6 @@ const register = async (req, res) => {
 
     const emailLower = email.toLowerCase().trim();
 
-    // Duplicate check
     const existing = await pool.query(
       'SELECT id FROM users WHERE email = $1 OR username = $2',
       [emailLower, username.trim()]
@@ -94,7 +93,6 @@ const login = async (req, res) => {
 
     const emailLower = email.toLowerCase().trim();
 
-    // User fetch
     const userResult = await pool.query(
       'SELECT * FROM users WHERE email = $1 AND is_active = TRUE',
       [emailLower]
@@ -109,7 +107,6 @@ const login = async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Password verify
     const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
       return res.status(401).json({
@@ -118,13 +115,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Purane unused OTPs clean karo
-    await pool.query(
-      'DELETE FROM email_otps WHERE user_id = $1',
-      [user.id]
-    );
+    await pool.query('DELETE FROM email_otps WHERE user_id = $1', [user.id]);
 
-    // Naya OTP generate + save
     const otp = generateOTP();
     const expiresAt = getOTPExpiry();
 
@@ -133,10 +125,8 @@ const login = async (req, res) => {
       [user.id, otp, expiresAt]
     );
 
-    // OTP email bhejo
     await sendOTPEmail(user.email, otp, user.name || user.username);
 
-    // Short-lived temp token — sirf OTP step ke liye
     const tempToken = jwt.sign(
       { userId: user.id, step: 'otp_pending' },
       process.env.JWT_SECRET,
@@ -174,7 +164,6 @@ const verifyOTP = async (req, res) => {
       });
     }
 
-    // Temp token extract + verify
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
@@ -201,7 +190,6 @@ const verifyOTP = async (req, res) => {
       });
     }
 
-    // OTP database se verify karo
     const otpResult = await pool.query(
       `SELECT * FROM email_otps
        WHERE user_id = $1
@@ -218,10 +206,8 @@ const verifyOTP = async (req, res) => {
       });
     }
 
-    // OTP mark used + delete rest
     await pool.query('DELETE FROM email_otps WHERE user_id = $1', [decoded.userId]);
 
-    // User fetch
     const userResult = await pool.query(
       `SELECT id, email, username, name, role, profile_picture, subscription_type
        FROM users WHERE id = $1`,
@@ -234,13 +220,8 @@ const verifyOTP = async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Last login update
-    await pool.query(
-      'UPDATE users SET last_login = NOW() WHERE id = $1',
-      [user.id]
-    );
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
-    // Final access token
     const accessToken = jwt.sign(
       {
         userId: user.id,
@@ -299,7 +280,6 @@ const resendOTP = async (req, res) => {
       });
     }
 
-    // Rate limit: 60 seconds ke baad hi resend ho
     const lastOtp = await pool.query(
       'SELECT created_at FROM email_otps WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
       [decoded.userId]
@@ -317,7 +297,6 @@ const resendOTP = async (req, res) => {
       }
     }
 
-    // User fetch
     const userResult = await pool.query(
       'SELECT email, name, username FROM users WHERE id = $1',
       [decoded.userId]
@@ -329,7 +308,6 @@ const resendOTP = async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Old OTPs delete + new generate
     await pool.query('DELETE FROM email_otps WHERE user_id = $1', [decoded.userId]);
 
     const otp = generateOTP();
@@ -357,7 +335,6 @@ const resendOTP = async (req, res) => {
 // ──────────────────────────────────────────────────────────────────────────────
 const logout = async (req, res) => {
   try {
-    // Agar user logged in hai, uske OTPs clean karo
     if (req.user?.userId) {
       await pool.query('DELETE FROM email_otps WHERE user_id = $1', [req.user.userId]);
     }
@@ -368,4 +345,52 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { register, login, verifyOTP, resendOTP, logout };
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/auth/me  →  return current logged-in user
+// Header: Authorization: Bearer <accessToken>
+// ──────────────────────────────────────────────────────────────────────────────
+const getCurrentUser = async (req, res) => {
+  try {
+    // req.user.userId is set by the authenticate middleware
+    const userResult = await pool.query(
+      `SELECT id, email, username, name, role, profile_picture,
+              subscription_type, is_active, created_at, last_login
+       FROM users
+       WHERE id = $1 AND is_active = TRUE`,
+      [req.user.userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        role: user.role || 'user',
+        profilePicture: user.profile_picture || null,
+        subscriptionType: user.subscription_type || 'free',
+        isActive: user.is_active,
+        createdAt: user.created_at,
+        lastLogin: user.last_login,
+      },
+    });
+  } catch (error) {
+    console.error('[GetCurrentUser] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+module.exports = { register, login, verifyOTP, resendOTP, logout, getCurrentUser };
