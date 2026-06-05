@@ -1,269 +1,371 @@
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { query } = require('../config/database');
-const environment = require('../config/environment');
+const pool = require('../config/database'); // apna existing db pool
+const { generateOTP, getOTPExpiry } = require('../utils/otpHelper');
+const { sendOTPEmail } = require('../utils/emailService');
 
-const authController = {
-  // ---------- SIGNUP ----------
-  signup: async (req, res) => {
-    try {
-      const { username, email, password, full_name } = req.body;
+// ──────────────────────────────────────────────────────────────────────────────
+// HELPER: mask email for safe display  e.g. us****@gmail.com
+// ──────────────────────────────────────────────────────────────────────────────
+const maskEmail = (email) => {
+  const [user, domain] = email.split('@');
+  const visible = user.slice(0, 2);
+  return `${visible}****@${domain}`;
+};
 
-      // Detailed validation
-      const errors = [];
-      if (!username || username.trim().length < 3) {
-        errors.push({ field: 'username', message: 'Username must be at least 3 characters' });
-      } else if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-        errors.push({ field: 'username', message: 'Username can only contain letters, numbers, and underscores' });
-      }
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        errors.push({ field: 'email', message: 'Valid email is required' });
-      }
-      if (!password || password.length < 6) {
-        errors.push({ field: 'password', message: 'Password must be at least 6 characters' });
-      }
-      if (!full_name || full_name.trim().length < 2) {
-        errors.push({ field: 'full_name', message: 'Full name is required' });
-      }
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/register
+// ──────────────────────────────────────────────────────────────────────────────
+const register = async (req, res) => {
+  try {
+    const { username, email, password, name } = req.body;
 
-      if (errors.length > 0) {
-        return res.status(422).json({
-          status: 'error',
-          message: 'Validation failed',
-          errors
-        });
-      }
-
-      // Check existing user
-      const existing = await query(
-        'SELECT id FROM users WHERE email = $1 OR username = $2',
-        [email.trim(), username.trim()]
-      );
-      if (existing.rows.length > 0) {
-        return res.status(409).json({
-          status: 'error',
-          message: 'User with this email or username already exists'
-        });
-      }
-
-      // Hash password
-      const saltRounds = 12;
-      const password_hash = await bcrypt.hash(password, saltRounds);
-
-      // Create user
-      const result = await query(
-        `INSERT INTO users (username, email, password_hash, full_name)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, username, email, full_name, is_creator, is_admin, is_premium, created_at`,
-        [username.trim(), email.trim(), password_hash, full_name.trim()]
-      );
-
-      const user = result.rows[0];
-
-      // Generate JWT
-      const token = jwt.sign(
-        { userId: user.id, email: user.email },
-        environment.JWT_SECRET,
-        { expiresIn: environment.JWT_EXPIRE }
-      );
-
-      // Set cookie
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: environment.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000
+    if (!username || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'username, email aur password required hain',
       });
+    }
 
-      return res.status(201).json({
-        status: 'success',
-        message: 'Account created successfully',
-        data: { user, token }
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password kam se kam 6 characters ka hona chahiye',
       });
-    } catch (error) {
-      console.error('Signup error:', error);
-      return res.status(500).json({ status: 'error', message: 'Error creating account' });
     }
-  },
 
-  // ---------- LOGIN ----------
-  login: async (req, res) => {
-    try {
-      const { email, password } = req.body;
+    const emailLower = email.toLowerCase().trim();
 
-      // Validation
-      if (!email || !password) {
-        return res.status(422).json({
-          status: 'error',
-          message: 'Email and password are required'
-        });
-      }
-
-      const result = await query(
-        `SELECT id, username, email, full_name, profile_picture, password_hash,
-                is_creator, is_admin, is_active, is_premium
-         FROM users
-         WHERE email = $1 AND is_active = true`,
-        [email.trim()]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
-      }
-
-      const user = result.rows[0];
-      const isValid = await bcrypt.compare(password, user.password_hash);
-      if (!isValid) {
-        return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
-      }
-
-      // Update last login (fire and forget)
-      query('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1', [user.id]).catch(console.error);
-
-      // Log admin login (fire and forget)
-      if (user.is_admin) {
-        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || req.ip;
-        query(
-          `INSERT INTO admin_audit_logs (admin_id, action, ip_address)
-           VALUES ($1, $2, $3)`,
-          [user.id, 'Admin login', ip]
-        ).catch(console.error);
-      }
-
-      const token = jwt.sign(
-        { userId: user.id, email: user.email },
-        environment.JWT_SECRET,
-        { expiresIn: environment.JWT_EXPIRE }
-      );
-
-      // Remove password_hash from response
-      const { password_hash, ...userWithoutPassword } = user;
-
-      res.cookie('token', token, {
-  httpOnly: true,
-  secure: true,           // must be true for sameSite: none
-  sameSite: 'none',       // ← allows cross-origin
-  maxAge: 7 * 24 * 60 * 60 * 1000
-});
-
-      return res.json({
-        status: 'success',
-        message: 'Login successful',
-        data: { user: userWithoutPassword, token }
+    // Duplicate check
+    const existing = await pool.query(
+      'SELECT id FROM users WHERE email = $1 OR username = $2',
+      [emailLower, username.trim()]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Yeh email ya username pehle se registered hai',
       });
-    } catch (error) {
-      console.error('Login error:', error);
-      return res.status(500).json({ status: 'error', message: 'Error logging in' });
     }
-  },
 
-  // ---------- GET CURRENT USER ----------
-  getMe: async (req, res) => {
-    try {
-      const result = await query(
-        `SELECT id, username, email, full_name, profile_picture,
-                is_creator, is_admin, creator_bio, preferred_language,
-                created_at, last_login_at
-         FROM users
-         WHERE id = $1 AND is_active = true`,
-        [req.user.id]
-      );
+    const passwordHash = await bcrypt.hash(password, 12);
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ status: 'error', message: 'User not found' });
-      }
+    const result = await pool.query(
+      `INSERT INTO users (username, email, password_hash, name, is_active, created_at)
+       VALUES ($1, $2, $3, $4, TRUE, NOW())
+       RETURNING id, username, email, name`,
+      [username.trim(), emailLower, passwordHash, name?.trim() || username.trim()]
+    );
 
-      return res.json({ status: 'success', data: { user: result.rows[0] } });
-    } catch (error) {
-      console.error('Get me error:', error);
-      return res.status(500).json({ status: 'error', message: 'Error fetching user data' });
-    }
-  },
+    const user = result.rows[0];
 
-  // ---------- LOGOUT ----------
-  logout: async (req, res) => {
-    try {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: environment.NODE_ENV === 'production',
-        sameSite: 'strict'
-      });
-      return res.json({ status: 'success', message: 'Logged out successfully' });
-    } catch (error) {
-      console.error('Logout error:', error);
-      return res.status(500).json({ status: 'error', message: 'Error logging out' });
-    }
-  },
-
-  // ---------- UPDATE PROFILE ----------
-  updateProfile: async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const updateFields = [];
-      const values = [];
-      let paramCount = 1;
-
-      if (req.body.full_name) {
-        updateFields.push(`full_name = $${paramCount}`);
-        values.push(req.body.full_name.trim());
-        paramCount++;
-      }
-      if (req.body.preferred_language) {
-        updateFields.push(`preferred_language = $${paramCount}`);
-        values.push(req.body.preferred_language);
-        paramCount++;
-      }
-      if (req.body.creator_bio !== undefined && req.user.is_creator) {
-        updateFields.push(`creator_bio = $${paramCount}`);
-        values.push(req.body.creator_bio);
-        paramCount++;
-      }
-
-      if (updateFields.length === 0) {
-        return res.status(400).json({ status: 'error', message: 'No fields to update' });
-      }
-
-      values.push(userId);
-      const result = await query(
-        `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramCount}
-         RETURNING id, username, email, full_name, profile_picture, is_creator, preferred_language`,
-        values
-      );
-      return res.json({ status: 'success', message: 'Profile updated successfully', data: { user: result.rows[0] } });
-    } catch (error) {
-      console.error('Update profile error:', error);
-      return res.status(500).json({ status: 'error', message: 'Error updating profile' });
-    }
-  },
-
-  // ---------- CHANGE PASSWORD ----------
-  changePassword: async (req, res) => {
-    try {
-      const { current_password, new_password } = req.body;
-      const userId = req.user.id;
-
-      if (!current_password || !new_password || new_password.length < 6) {
-        return res.status(422).json({ status: 'error', message: 'Invalid password data' });
-      }
-
-      const result = await query('SELECT password_hash FROM users WHERE id = $1', [userId]);
-      if (result.rows.length === 0) {
-        return res.status(404).json({ status: 'error', message: 'User not found' });
-      }
-
-      const isValid = await bcrypt.compare(current_password, result.rows[0].password_hash);
-      if (!isValid) {
-        return res.status(401).json({ status: 'error', message: 'Current password is incorrect' });
-      }
-
-      const newHash = await bcrypt.hash(new_password, 12);
-      await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, userId]);
-      return res.json({ status: 'success', message: 'Password changed successfully' });
-    } catch (error) {
-      console.error('Change password error:', error);
-      return res.status(500).json({ status: 'error', message: 'Error changing password' });
-    }
+    return res.status(201).json({
+      success: true,
+      message: 'Account bana diya! Ab login karo.',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+      },
+    });
+  } catch (error) {
+    console.error('[Register] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error. Dobara try karo.',
+    });
   }
 };
 
-module.exports = authController;
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/login  →  credentials check → OTP send → tempToken return
+// ──────────────────────────────────────────────────────────────────────────────
+const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email aur password dono required hain',
+      });
+    }
+
+    const emailLower = email.toLowerCase().trim();
+
+    // User fetch
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1 AND is_active = TRUE',
+      [emailLower]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ya password',
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Password verify
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email ya password',
+      });
+    }
+
+    // Purane unused OTPs clean karo
+    await pool.query(
+      'DELETE FROM email_otps WHERE user_id = $1',
+      [user.id]
+    );
+
+    // Naya OTP generate + save
+    const otp = generateOTP();
+    const expiresAt = getOTPExpiry();
+
+    await pool.query(
+      'INSERT INTO email_otps (user_id, otp_code, expires_at) VALUES ($1, $2, $3)',
+      [user.id, otp, expiresAt]
+    );
+
+    // OTP email bhejo
+    await sendOTPEmail(user.email, otp, user.name || user.username);
+
+    // Short-lived temp token — sirf OTP step ke liye
+    const tempToken = jwt.sign(
+      { userId: user.id, step: 'otp_pending' },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `OTP bhej diya gaya: ${maskEmail(user.email)}`,
+      tempToken,
+      maskedEmail: maskEmail(user.email),
+    });
+  } catch (error) {
+    console.error('[Login] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error. Dobara try karo.',
+    });
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/verify-otp  →  OTP check → final JWT return
+// Header: Authorization: Bearer <tempToken>
+// Body: { otp: "123456" }
+// ──────────────────────────────────────────────────────────────────────────────
+const verifyOTP = async (req, res) => {
+  try {
+    const { otp } = req.body;
+
+    if (!otp || otp.toString().trim().length !== 6) {
+      return res.status(400).json({
+        success: false,
+        message: '6-digit OTP required hai',
+      });
+    }
+
+    // Temp token extract + verify
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authorization token missing',
+      });
+    }
+
+    const tempToken = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: 'Session expire ho gayi. Dobara login karo.',
+      });
+    }
+
+    if (decoded.step !== 'otp_pending') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid session type',
+      });
+    }
+
+    // OTP database se verify karo
+    const otpResult = await pool.query(
+      `SELECT * FROM email_otps
+       WHERE user_id = $1
+         AND otp_code = $2
+         AND is_used = FALSE
+         AND expires_at > NOW()`,
+      [decoded.userId, otp.toString().trim()]
+    );
+
+    if (otpResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP galat hai ya expire ho gaya',
+      });
+    }
+
+    // OTP mark used + delete rest
+    await pool.query('DELETE FROM email_otps WHERE user_id = $1', [decoded.userId]);
+
+    // User fetch
+    const userResult = await pool.query(
+      `SELECT id, email, username, name, role, profile_picture, subscription_type
+       FROM users WHERE id = $1`,
+      [decoded.userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Last login update
+    await pool.query(
+      'UPDATE users SET last_login = NOW() WHERE id = $1',
+      [user.id]
+    );
+
+    // Final access token
+    const accessToken = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role || 'user',
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful! Welcome back 🎉',
+      token: accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        role: user.role || 'user',
+        profilePicture: user.profile_picture || null,
+        subscriptionType: user.subscription_type || 'free',
+      },
+    });
+  } catch (error) {
+    console.error('[VerifyOTP] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/resend-otp
+// Header: Authorization: Bearer <tempToken>
+// ──────────────────────────────────────────────────────────────────────────────
+const resendOTP = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authorization token missing',
+      });
+    }
+
+    const tempToken = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: 'Session expire ho gayi. Dobara login karo.',
+      });
+    }
+
+    // Rate limit: 60 seconds ke baad hi resend ho
+    const lastOtp = await pool.query(
+      'SELECT created_at FROM email_otps WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [decoded.userId]
+    );
+
+    if (lastOtp.rows.length > 0) {
+      const lastSent = new Date(lastOtp.rows[0].created_at);
+      const diffSeconds = Math.floor((Date.now() - lastSent.getTime()) / 1000);
+      if (diffSeconds < 60) {
+        return res.status(429).json({
+          success: false,
+          message: `${60 - diffSeconds} seconds baad resend karo`,
+          retryAfter: 60 - diffSeconds,
+        });
+      }
+    }
+
+    // User fetch
+    const userResult = await pool.query(
+      'SELECT email, name, username FROM users WHERE id = $1',
+      [decoded.userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Old OTPs delete + new generate
+    await pool.query('DELETE FROM email_otps WHERE user_id = $1', [decoded.userId]);
+
+    const otp = generateOTP();
+    const expiresAt = getOTPExpiry();
+
+    await pool.query(
+      'INSERT INTO email_otps (user_id, otp_code, expires_at) VALUES ($1, $2, $3)',
+      [decoded.userId, otp, expiresAt]
+    );
+
+    await sendOTPEmail(user.email, otp, user.name || user.username);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Naya OTP bhej diya gaya!',
+    });
+  } catch (error) {
+    console.error('[ResendOTP] Error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/logout
+// ──────────────────────────────────────────────────────────────────────────────
+const logout = async (req, res) => {
+  try {
+    // Agar user logged in hai, uske OTPs clean karo
+    if (req.user?.userId) {
+      await pool.query('DELETE FROM email_otps WHERE user_id = $1', [req.user.userId]);
+    }
+    return res.status(200).json({ success: true, message: 'Logout successful' });
+  } catch (error) {
+    console.error('[Logout] Error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+module.exports = { register, login, verifyOTP, resendOTP, logout };
