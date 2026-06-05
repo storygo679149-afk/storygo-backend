@@ -1,20 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const authController = require('../controllers/authController');
-const { authenticate } = require('../middleware/authenticate');
-const { authLimiter } = require('../middleware/security');
+const {
+  register,
+  login,
+  verifyOTP,
+  resendOTP,
+  logout,
+} = require('../controllers/authController');
 
-// Apply rate limiter
-router.use(authLimiter);
-
-// Public routes
-router.post('/signup', authController.signup);
-router.post('/login', authController.login);
-
-// Protected routes
-router.get('/me', authenticate, authController.getMe);
-router.post('/logout', authenticate, authController.logout);
-router.put('/update-profile', authenticate, authController.updateProfile);
-router.put('/change-password', authenticate, authController.changePassword);
+// ── Public Routes ────────────────────────────────────────────
+router.post('/register', register);
+router.post('/login', login);          // Step 1: email+pass → OTP bhejo
+router.post('/verify-otp', verifyOTP); // Step 2: OTP → final JWT
+router.post('/resend-otp', resendOTP); // OTP resend (60s cooldown)
+router.post('/logout', logout);
 
 module.exports = router;
