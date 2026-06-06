@@ -4,15 +4,16 @@ const environment = require('../config/environment');
 const transporter = nodemailer.createTransport({
   host: environment.EMAIL_HOST,
   port: parseInt(environment.EMAIL_PORT) || 587,
-  secure: environment.EMAIL_SECURE === 'true', // ✅ string "false" → boolean false
+  secure: environment.EMAIL_SECURE === 'true',
+  family: 4, // ✅ force IPv4 — Render free tier blocks IPv6 outbound
   auth: {
     user: environment.EMAIL_USER,
     pass: environment.EMAIL_PASS,
   },
   tls: {
-    rejectUnauthorized: false, // ✅ required on Render's network
+    rejectUnauthorized: false,
   },
-  connectionTimeout: 10000,  // 10s
+  connectionTimeout: 10000,
   greetingTimeout:   10000,
   socketTimeout:     15000,
 });
