@@ -3,26 +3,29 @@ const environment = require('../config/environment');
 
 const transporter = nodemailer.createTransport({
   host: environment.EMAIL_HOST,
-  port: environment.EMAIL_PORT,
-  secure: false, // true for 465, false for other ports
+  port: parseInt(environment.EMAIL_PORT) || 587,
+  secure: environment.EMAIL_SECURE === 'true', // ✅ string "false" → boolean false
   auth: {
     user: environment.EMAIL_USER,
     pass: environment.EMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false, // ✅ required on Render's network
+  },
+  connectionTimeout: 10000,  // 10s
+  greetingTimeout:   10000,
+  socketTimeout:     15000,
 });
 
-// Logo URL – set EMAIL_LOGO_URL in .env (e.g., https://yourdomain.com/logo.png)
+// Logo URL – set EMAIL_LOGO_URL in .env
 const LOGO_URL = environment.EMAIL_LOGO_URL || '';
 
-const sendOTP = async (to, otp, purpose) => {
-  const subject = purpose === 'signup' ? 'Verify your email – Story Go' : 'Login OTP – Story Go';
-  const actionText = purpose === 'signup' ? 'creating your account' : 'logging in';
-
+const buildHtml = (otp, actionText) => {
   const logoHtml = LOGO_URL
     ? `<img src="${LOGO_URL}" alt="Story Go" style="height: 48px; margin-bottom: 16px;" />`
     : `<h2 style="color: #a78bfa; margin: 0;">📖 Story Go</h2>`;
 
-  const html = `
+  return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -32,8 +35,8 @@ const sendOTP = async (to, otp, purpose) => {
     </head>
     <body style="margin: 0; padding: 0; background-color: #0f071a; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
       <div style="max-width: 560px; margin: 40px auto; background: #1a1a2e; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(139,92,246,0.2);">
-        
-        <!-- Header with logo -->
+
+        <!-- Header -->
         <div style="text-align: center; padding: 32px 24px 16px; background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(99,102,241,0.05)); border-bottom: 1px solid rgba(139,92,246,0.15);">
           ${logoHtml}
           <h1 style="margin: 12px 0 0; font-size: 24px; font-weight: 700; background: linear-gradient(135deg, #fff, #c4b5fd); -webkit-background-clip: text; background-clip: text; color: transparent;">Story Go</h1>
@@ -45,12 +48,12 @@ const sendOTP = async (to, otp, purpose) => {
           <p style="font-size: 16px; line-height: 1.5; color: #c0c0d0; margin-bottom: 24px;">
             You requested this code for ${actionText}. Use the OTP below to complete your action. It expires in <strong>5 minutes</strong>.
           </p>
-          
+
           <!-- OTP Box -->
           <div style="background: #0f071a; border-radius: 16px; padding: 20px; margin: 16px 0; border: 1px solid rgba(139,92,246,0.3);">
             <span style="font-size: 42px; font-weight: 800; letter-spacing: 8px; font-family: monospace; color: #a78bfa;">${otp}</span>
           </div>
-          
+
           <p style="font-size: 14px; color: #9ca3af; margin-top: 24px;">
             If you didn't request this, please ignore this email. Your account is safe.
           </p>
@@ -62,17 +65,35 @@ const sendOTP = async (to, otp, purpose) => {
             &copy; ${new Date().getFullYear()} Story Go – Your audio storytelling platform
           </p>
         </div>
+
       </div>
     </body>
     </html>
   `;
+};
+
+// ✅ Named sendOTPEmail — matches what authController.js imports
+const sendOTPEmail = async (to, otp, nameOrUsername) => {
+  const actionText = `logging in as <strong>${nameOrUsername}</strong>`;
 
   await transporter.sendMail({
-    from: environment.EMAIL_FROM,
+    from: environment.EMAIL_FROM || `"Story Go" <${environment.EMAIL_USER}>`,
     to,
-    subject,
-    html,
+    subject: 'Login OTP – Story Go',
+    html: buildHtml(otp, actionText),
   });
 };
 
-module.exports = { sendOTP };
+// ✅ Also export sendOTP for any other callers (register flow etc.)
+const sendOTP = async (to, otp, purpose) => {
+  const actionText = purpose === 'signup' ? 'creating your account' : 'logging in';
+
+  await transporter.sendMail({
+    from: environment.EMAIL_FROM || `"Story Go" <${environment.EMAIL_USER}>`,
+    to,
+    subject: purpose === 'signup' ? 'Verify your email – Story Go' : 'Login OTP – Story Go',
+    html: buildHtml(otp, actionText),
+  });
+};
+
+module.exports = { sendOTPEmail, sendOTP };
