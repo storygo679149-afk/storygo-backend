@@ -1,119 +1,85 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-// ────────────────────────────────────────────────────────────
-// Transporter — Gmail SMTP (App Password required)
-// .env mein SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS set karo
-// ────────────────────────────────────────────────────────────
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: false, // TLS
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
-};
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-/**
- * OTP email bhejta hai user ko
- * @param {string} email - recipient email
- * @param {string} otp - 6-digit OTP
- * @param {string} username - user ka naam
- */
-const sendOTPEmail = async (email, otp, username) => {
-  const transporter = createTransporter();
+const FROM = process.env.EMAIL_FROM || 'onboarding@resend.dev';
 
-  // Verify transporter before sending
-  await transporter.verify();
-
-  const displayName = username || 'User';
-
-  const mailOptions = {
-    from: `"StoryGo" <${process.env.SMTP_USER}>`,
-    to: email,
-    subject: `${otp} — Your StoryGo Login OTP`,
-    html: `
+// ─── HTML builder ────────────────────────────────────────────
+const buildHtml = (otp, actionText) => `
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>StoryGo OTP</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="480" cellpadding="0" cellspacing="0" style="background:#141414;border-radius:16px;overflow:hidden;border:1px solid #2a2a2a;">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#e50914 0%,#b00710 100%);padding:32px 40px;text-align:center;">
-              <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;letter-spacing:2px;text-transform:uppercase;">StoryGo</h1>
-              <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;letter-spacing:1px;">AUDIO STORYTELLING PLATFORM</p>
-            </td>
-          </tr>
+<body style="margin:0;padding:0;background:#0f071a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#1a1a2e;border-radius:24px;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.4);border:1px solid rgba(139,92,246,0.2);">
 
-          <!-- Body -->
-          <tr>
-            <td style="padding:40px;">
-              <p style="margin:0 0 8px;color:#aaaaaa;font-size:14px;">Hello,</p>
-              <h2 style="margin:0 0 24px;color:#ffffff;font-size:22px;font-weight:600;">
-                Hi <span style="color:#e50914;">${displayName}</span> 👋
-              </h2>
-              <p style="margin:0 0 8px;color:#888888;font-size:14px;line-height:1.6;">
-                Your login OTP for StoryGo is:
-              </p>
+    <!-- Header -->
+    <div style="text-align:center;padding:32px 24px 16px;background:linear-gradient(135deg,rgba(139,92,246,0.1),rgba(99,102,241,0.05));border-bottom:1px solid rgba(139,92,246,0.15);">
+      <h1 style="margin:0;font-size:26px;font-weight:900;color:#a78bfa;letter-spacing:3px;">📖 STORY GO</h1>
+      <p style="margin:6px 0 0;font-size:11px;color:#555;letter-spacing:2px;text-transform:uppercase;">Audio Storytelling</p>
+    </div>
 
-              <!-- OTP Box -->
-              <div style="background:#1e1e1e;border:2px solid #e50914;border-radius:12px;padding:28px;text-align:center;margin:24px 0;">
-                <div style="letter-spacing:18px;font-size:42px;font-weight:900;color:#ffffff;font-family:'Courier New',monospace;">
-                  ${otp}
-                </div>
-              </div>
+    <!-- Content -->
+    <div style="padding:32px 28px;text-align:center;">
+      <h2 style="font-size:22px;font-weight:600;color:#ffffff;margin:0 0 12px;">🔐 One-Time Password</h2>
+      <p style="font-size:16px;line-height:1.5;color:#c0c0d0;margin-bottom:24px;">
+        You requested this code for ${actionText}.<br>
+        It expires in <strong style="color:#a78bfa;">5 minutes</strong>.
+      </p>
 
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-                <tr>
-                  <td style="background:#1a1a1a;border-left:3px solid #e50914;border-radius:4px;padding:12px 16px;">
-                    <p style="margin:0;color:#ffcc00;font-size:13px;">
-                      ⏱ &nbsp;This OTP expires in <strong>10 minutes</strong>
-                    </p>
-                  </td>
-                </tr>
-              </table>
+      <!-- OTP Box -->
+      <div style="background:#0f071a;border-radius:16px;padding:24px;margin:16px 0;border:1px solid rgba(139,92,246,0.3);">
+        <span style="font-size:48px;font-weight:800;letter-spacing:10px;font-family:monospace;color:#a78bfa;">${otp}</span>
+      </div>
 
-              <p style="margin:0 0 6px;color:#666666;font-size:13px;">Security tips:</p>
-              <ul style="margin:0 0 24px;padding-left:20px;color:#666666;font-size:13px;line-height:1.8;">
-                <li>Never share this OTP with anyone</li>
-                <li>StoryGo team will never ask for your OTP</li>
-                <li>If you did not request this, change your password immediately</li>
-              </ul>
+      <p style="font-size:13px;color:#6b7280;margin-top:24px;">
+        If you didn't request this, you can safely ignore this email.
+      </p>
+    </div>
 
-              <p style="margin:0;color:#444444;font-size:12px;text-align:center;border-top:1px solid #2a2a2a;padding-top:24px;">
-                © 2026 StoryGo · All rights reserved<br/>
-                <span style="color:#333333;">This is an automated email. Please do not reply.</span>
-              </p>
-            </td>
-          </tr>
+    <!-- Footer -->
+    <div style="background:rgba(0,0,0,0.2);padding:20px;text-align:center;border-top:1px solid rgba(139,92,246,0.1);">
+      <p style="font-size:12px;color:#6b7280;margin:0;">
+        &copy; ${new Date().getFullYear()} Story Go – Your audio storytelling platform
+      </p>
+    </div>
 
-        </table>
-      </td>
-    </tr>
-  </table>
+  </div>
 </body>
-</html>
-    `,
-    text: `Hi ${displayName},\n\nYour StoryGo login OTP is: ${otp}\n\nThis OTP expires in 10 minutes.\nDo not share it with anyone.\n\n— StoryGo Team`,
-  };
+</html>`;
 
-  const info = await transporter.sendMail(mailOptions);
-  console.log(`[EmailService] OTP sent to ${email} | MessageId: ${info.messageId}`);
-  return info;
+// ─── sendOTPEmail — called by authController login/resend ────
+const sendOTPEmail = async (to, otp, nameOrUsername) => {
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to,
+    subject: 'Login OTP – Story Go',
+    html: buildHtml(otp, `logging in as <strong>${nameOrUsername}</strong>`),
+  });
+
+  if (error) {
+    console.error('[Resend] sendOTPEmail error:', error);
+    throw new Error(error.message);
+  }
 };
 
-module.exports = { sendOTPEmail };
+// ─── sendOTP — generic, for signup / other flows ─────────────
+const sendOTP = async (to, otp, purpose) => {
+  const actionText = purpose === 'signup' ? 'creating your account' : 'logging in';
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to,
+    subject: purpose === 'signup' ? 'Verify your email – Story Go' : 'Login OTP – Story Go',
+    html: buildHtml(otp, actionText),
+  });
+
+  if (error) {
+    console.error('[Resend] sendOTP error:', error);
+    throw new Error(error.message);
+  }
+};
+
+module.exports = { sendOTPEmail, sendOTP };
