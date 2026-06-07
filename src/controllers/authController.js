@@ -40,7 +40,6 @@ exports.register = async (req, res) => {
     const otp = generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Insert using full_name column
     const newUser = await pool.query(
       `INSERT INTO users (id, username, email, password_hash, full_name, is_verified, otp_code, otp_expires_at, role, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
@@ -192,6 +191,9 @@ exports.login = async (req, res) => {
     if (!valid) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
+
+    // Update last login
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = generateToken(user);
     return res.status(200).json({
