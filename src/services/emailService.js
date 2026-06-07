@@ -1,19 +1,21 @@
 // src/services/emailService.js
 const nodemailer = require('nodemailer');
-const Transport = require('nodemailer-brevo-transport');
 
-// Create a transporter using the Brevo transport
-const transporter = nodemailer.createTransport(
-  new Transport({ apiKey: process.env.BREVO_API_KEY })
-);
-
-/**
- * Generate a random 6-digit OTP.
- * @returns {string} 6-digit OTP
- */
+// Generate a random 6-digit OTP
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
+
+// Create a transporter using Brevo SMTP
+// For more details, see: https://developers.brevo.com/docs/send-transactional-email#nodejs-code-example
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  auth: {
+    user: process.env.SMTP_USER, // Your Brevo login email
+    pass: process.env.SMTP_PASSWORD, // Your SMTP key from Brevo
+  },
+});
 
 /**
  * Send a verification OTP email.
