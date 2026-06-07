@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { generateOTP, sendVerificationEmail } = require('../services/emailService');
 const { pool } = require('../config/database');
 
+// Helper: generate JWT
 const generateToken = (user) => {
   return jwt.sign(
     { userId: user.id, email: user.email, role: user.role || 'user' },
@@ -12,11 +13,23 @@ const generateToken = (user) => {
   );
 };
 
-// Register
+// Helper: enrich user object (optional)
+const formatUser = (user) => ({
+  id: user.id,
+  email: user.email,
+  username: user.username,
+  full_name: user.full_name,
+  role: user.role,
+  is_verified: user.is_verified,
+});
+
+// @route   POST /api/auth/register
+// @desc    Register a new user (only email uniqueness check)
 exports.register = async (req, res) => {
   try {
     const { username, email, password, full_name } = req.body;
 
+    // Validation
     if (!username || !email || !password || !full_name) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
@@ -28,12 +41,13 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
     }
 
-    const existing = await pool.query(
-      'SELECT id FROM users WHERE email = $1 OR username = $2',
-      [email.toLowerCase(), username]
+    // ✅ Only check if email already exists (username can be duplicate)
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email.toLowerCase()]
     );
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ success: false, message: 'User already exists' });
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ success: false, message: 'Email already registered' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -47,12 +61,13 @@ exports.register = async (req, res) => {
       [uuidv4(), username, email.toLowerCase(), hashedPassword, full_name, false, otp, otpExpires, 'user']
     );
 
-    await sendVerificationEmail(email, otp);
+    // Send OTP email (async, don't wait for response)
+    sendVerificationEmail(email, otp).catch(err => console.error('Email error:', err));
 
     return res.status(201).json({
       success: true,
       message: 'Registration successful! Please check your email for the verification code.',
-      user: newUser.rows[0],
+      user: formatUser(newUser.rows[0]),
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -60,7 +75,8 @@ exports.register = async (req, res) => {
   }
 };
 
-// Verify OTP
+// @route   POST /api/auth/verify-otp
+// @desc    Verify OTP and activate account
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -79,22 +95,17 @@ exports.verifyOTP = async (req, res) => {
     const user = userRes.rows[0];
 
     if (user.is_verified) {
+      // Already verified – log them in
       const token = generateToken(user);
       return res.status(200).json({
         success: true,
         message: 'Account already verified. Logged in.',
         token,
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          full_name: user.full_name,
-          role: user.role,
-          isVerified: true
-        }
+        user: formatUser(user),
       });
     }
 
+    // Check OTP
     if (user.otp_code !== otp) {
       return res.status(400).json({ success: false, message: 'Invalid verification code' });
     }
@@ -102,6 +113,7 @@ exports.verifyOTP = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Code expired. Please request a new one.' });
     }
 
+    // Mark as verified
     await pool.query(
       `UPDATE users SET is_verified = TRUE, otp_code = NULL, otp_expires_at = NULL WHERE id = $1`,
       [user.id]
@@ -112,14 +124,7 @@ exports.verifyOTP = async (req, res) => {
       success: true,
       message: 'Account verified successfully!',
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        full_name: user.full_name,
-        role: user.role,
-        isVerified: true
-      }
+      user: formatUser({ ...user, is_verified: true }),
     });
   } catch (error) {
     console.error('OTP verify error:', error);
@@ -127,11 +132,14 @@ exports.verifyOTP = async (req, res) => {
   }
 };
 
-// Resend OTP
+// @route   POST /api/auth/resend-otp
+// @desc    Resend OTP code to email
 exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
 
     const userRes = await pool.query(
       'SELECT id, email, is_verified FROM users WHERE email = $1',
@@ -151,8 +159,8 @@ exports.resendOTP = async (req, res) => {
       'UPDATE users SET otp_code = $1, otp_expires_at = $2 WHERE id = $3',
       [newOtp, otpExpires, user.id]
     );
-    await sendVerificationEmail(email, newOtp);
 
+    await sendVerificationEmail(email, newOtp);
     return res.status(200).json({ success: true, message: 'New verification code sent' });
   } catch (error) {
     console.error('Resend OTP error:', error);
@@ -160,7 +168,8 @@ exports.resendOTP = async (req, res) => {
   }
 };
 
-// Login
+// @route   POST /api/auth/login
+// @desc    Login only if email is verified
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -183,7 +192,7 @@ exports.login = async (req, res) => {
         success: false,
         message: 'Account not verified. Please verify your email first.',
         requiresVerification: true,
-        email: user.email
+        email: user.email,
       });
     }
 
@@ -200,14 +209,7 @@ exports.login = async (req, res) => {
       success: true,
       message: 'Login successful',
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        full_name: user.full_name,
-        role: user.role,
-        isVerified: user.is_verified
-      }
+      user: formatUser(user),
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -215,7 +217,8 @@ exports.login = async (req, res) => {
   }
 };
 
-// Logout
+// @route   POST /api/auth/logout
+// @desc    Logout (client removes token)
 exports.logout = (req, res) => {
   return res.status(200).json({ success: true, message: 'Logged out' });
 };
