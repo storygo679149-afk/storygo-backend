@@ -13,7 +13,7 @@ const generateToken = (user) => {
   );
 };
 
-// Helper: enrich user object (optional)
+// Helper: format user object for response
 const formatUser = (user) => ({
   id: user.id,
   email: user.email,
@@ -24,7 +24,7 @@ const formatUser = (user) => ({
 });
 
 // @route   POST /api/auth/register
-// @desc    Register a new user (only email uniqueness check)
+// @desc    Register a new user (case‑insensitive email uniqueness)
 exports.register = async (req, res) => {
   try {
     const { username, email, password, full_name } = req.body;
@@ -41,10 +41,10 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
     }
 
-    // ✅ Only check if email already exists (username can be duplicate)
+    // ✅ Case‑insensitive email check
     const existingUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      [email.toLowerCase()]
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
+      [email]
     );
     if (existingUser.rows.length > 0) {
       return res.status(409).json({ success: false, message: 'Email already registered' });
@@ -53,15 +53,16 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const otp = generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    const lowerEmail = email.toLowerCase();
 
     const newUser = await pool.query(
       `INSERT INTO users (id, username, email, password_hash, full_name, is_verified, otp_code, otp_expires_at, role, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        RETURNING id, email, username, full_name, role, is_verified`,
-      [uuidv4(), username, email.toLowerCase(), hashedPassword, full_name, false, otp, otpExpires, 'user']
+      [uuidv4(), username, lowerEmail, hashedPassword, full_name, false, otp, otpExpires, 'user']
     );
 
-    // Send OTP email (async, don't wait for response)
+    // Send OTP email (async, don't block response)
     sendVerificationEmail(email, otp).catch(err => console.error('Email error:', err));
 
     return res.status(201).json({
@@ -86,8 +87,8 @@ exports.verifyOTP = async (req, res) => {
 
     const userRes = await pool.query(
       `SELECT id, email, username, full_name, role, is_verified, otp_code, otp_expires_at
-       FROM users WHERE email = $1`,
-      [email.toLowerCase()]
+       FROM users WHERE LOWER(email) = LOWER($1)`,
+      [email]
     );
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -95,7 +96,6 @@ exports.verifyOTP = async (req, res) => {
     const user = userRes.rows[0];
 
     if (user.is_verified) {
-      // Already verified – log them in
       const token = generateToken(user);
       return res.status(200).json({
         success: true,
@@ -105,7 +105,6 @@ exports.verifyOTP = async (req, res) => {
       });
     }
 
-    // Check OTP
     if (user.otp_code !== otp) {
       return res.status(400).json({ success: false, message: 'Invalid verification code' });
     }
@@ -113,7 +112,6 @@ exports.verifyOTP = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Code expired. Please request a new one.' });
     }
 
-    // Mark as verified
     await pool.query(
       `UPDATE users SET is_verified = TRUE, otp_code = NULL, otp_expires_at = NULL WHERE id = $1`,
       [user.id]
@@ -142,8 +140,8 @@ exports.resendOTP = async (req, res) => {
     }
 
     const userRes = await pool.query(
-      'SELECT id, email, is_verified FROM users WHERE email = $1',
-      [email.toLowerCase()]
+      'SELECT id, email, is_verified FROM users WHERE LOWER(email) = LOWER($1)',
+      [email]
     );
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -179,8 +177,8 @@ exports.login = async (req, res) => {
 
     const userRes = await pool.query(
       `SELECT id, email, username, full_name, password_hash, role, is_verified
-       FROM users WHERE email = $1`,
-      [email.toLowerCase()]
+       FROM users WHERE LOWER(email) = LOWER($1)`,
+      [email]
     );
     if (userRes.rows.length === 0) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -201,7 +199,7 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Update last login
+    // Update last login timestamp
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = generateToken(user);
