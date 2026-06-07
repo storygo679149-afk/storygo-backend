@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { generateOTP, sendVerificationEmail } = require('../services/emailService');
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 // Helper to generate JWT token
 const generateToken = (user) => {
