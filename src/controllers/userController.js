@@ -1,44 +1,53 @@
 // src/controllers/userController.js
+const { query } = require('../config/database');
+const { validationResult } = require('express-validator');
 
-const { pool } = require('../config/database');
+// ... your other methods (getProfile, updateProfile, etc.)
 
-// Become a creator – updates user role to 'creator'
 exports.becomeCreator = async (req, res) => {
   try {
-    const userId = req.user.id; // assumes you have auth middleware that sets req.user
+    const userId = req.user.id;
 
-    // Check if user already a creator
-    const userCheck = await pool.query(
-      'SELECT role FROM users WHERE id = $1',
+    // 1. Check current user
+    const userCheck = await query(
+      `SELECT id, role, is_creator FROM users WHERE id = $1`,
       [userId]
     );
     if (userCheck.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res.status(404).json({ status: 'error', message: 'User not found' });
     }
-    const currentRole = userCheck.rows[0].role;
-    if (currentRole === 'creator' || currentRole === 'admin') {
-      return res.status(400).json({ success: false, message: 'You are already a creator' });
+    const user = userCheck.rows[0];
+
+    // 2. Already a creator?
+    if (user.role === 'creator' || user.is_creator === true) {
+      return res.status(400).json({ status: 'error', message: 'You are already a creator' });
     }
 
-    // Update role
-    await pool.query(
-      'UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2',
-      ['creator', userId]
+    // 3. Update user
+    await query(
+      `UPDATE users 
+       SET role = 'creator', is_creator = true, updated_at = NOW() 
+       WHERE id = $1`,
+      [userId]
     );
 
-    // Fetch updated user data
-    const updatedUser = await pool.query(
-      'SELECT id, email, username, full_name, role, is_verified, profile_picture FROM users WHERE id = $1',
+    // 4. Fetch updated user data
+    const updatedUser = await query(
+      `SELECT id, username, email, full_name, role, is_creator, is_admin, profile_picture 
+       FROM users WHERE id = $1`,
       [userId]
     );
 
     return res.status(200).json({
-      success: true,
+      status: 'success',
       message: 'Congratulations! You are now a creator.',
-      user: updatedUser.rows[0]
+      data: { user: updatedUser.rows[0] }
     });
   } catch (error) {
     console.error('Become creator error:', error);
-    return res.status(500).json({ success: false, message: 'Server error. Please try again later.' });
+    return res.status(500).json({
+      status: 'error',
+      message: 'Server error. Please try again later.'
+    });
   }
 };
