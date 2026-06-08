@@ -4,7 +4,6 @@ const { v4: uuidv4 } = require('uuid');
 const { generateOTP, sendVerificationEmail } = require('../services/emailService');
 const { pool } = require('../config/database');
 
-// Helper: generate JWT
 const generateToken = (user) => {
   return jwt.sign(
     { userId: user.id, email: user.email, role: user.role || 'user' },
@@ -13,7 +12,14 @@ const generateToken = (user) => {
   );
 };
 
-// Helper: format user object for response
+const generateTempToken = (userId, email) => {
+  return jwt.sign(
+    { userId, email, purpose: 'login_otp' },
+    process.env.JWT_SECRET,
+    { expiresIn: '10m' }
+  );
+};
+
 const formatUser = (user) => ({
   id: user.id,
   email: user.email,
@@ -23,13 +29,12 @@ const formatUser = (user) => ({
   is_verified: user.is_verified,
 });
 
-// @route   POST /api/auth/register
-// @desc    Register a new user (case‑insensitive email uniqueness)
+// ─────────────────────────────────────────────────────────────────
+// REGISTER (unchanged, only email uniqueness)
+// ─────────────────────────────────────────────────────────────────
 exports.register = async (req, res) => {
   try {
     const { username, email, password, full_name } = req.body;
-
-    // Validation
     if (!username || !email || !password || !full_name) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
@@ -41,7 +46,6 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
     }
 
-    // ✅ Case‑insensitive email check
     const existingUser = await pool.query(
       'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
       [email]
@@ -62,7 +66,6 @@ exports.register = async (req, res) => {
       [uuidv4(), username, lowerEmail, hashedPassword, full_name, false, otp, otpExpires, 'user']
     );
 
-    // Send OTP email (async, don't block response)
     sendVerificationEmail(email, otp).catch(err => console.error('Email error:', err));
 
     return res.status(201).json({
@@ -76,8 +79,9 @@ exports.register = async (req, res) => {
   }
 };
 
-// @route   POST /api/auth/verify-otp
-// @desc    Verify OTP and activate account
+// ─────────────────────────────────────────────────────────────────
+// VERIFY OTP (for signup)
+// ─────────────────────────────────────────────────────────────────
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -130,14 +134,13 @@ exports.verifyOTP = async (req, res) => {
   }
 };
 
-// @route   POST /api/auth/resend-otp
-// @desc    Resend OTP code to email
+// ─────────────────────────────────────────────────────────────────
+// RESEND OTP (for signup)
+// ─────────────────────────────────────────────────────────────────
 exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: 'Email is required' });
-    }
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
     const userRes = await pool.query(
       'SELECT id, email, is_verified FROM users WHERE LOWER(email) = LOWER($1)',
@@ -166,8 +169,9 @@ exports.resendOTP = async (req, res) => {
   }
 };
 
-// @route   POST /api/auth/login
-// @desc    Login only if email is verified
+// ─────────────────────────────────────────────────────────────────
+// LOGIN – sends OTP if credentials are correct
+// ─────────────────────────────────────────────────────────────────
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -199,15 +203,26 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Update last login timestamp
-    await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+    // Generate OTP for login and store in user record (overwrites any previous OTP)
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await pool.query(
+      `UPDATE users SET otp_code = $1, otp_expires_at = $2 WHERE id = $3`,
+      [otp, otpExpires, user.id]
+    );
 
-    const token = generateToken(user);
+    // Send OTP email
+    await sendVerificationEmail(email, otp);
+
+    // Create a temporary token (valid 10 min) to link the OTP verification request
+    const tempToken = generateTempToken(user.id, user.email);
+
     return res.status(200).json({
       success: true,
-      message: 'Login successful',
-      token,
-      user: formatUser(user),
+      message: 'OTP sent to your email. Please verify to complete login.',
+      tempToken,
+      email: user.email,
+      requiresVerification: true,   // tell frontend to show OTP screen
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -215,8 +230,64 @@ exports.login = async (req, res) => {
   }
 };
 
-// @route   POST /api/auth/logout
-// @desc    Logout (client removes token)
+// ─────────────────────────────────────────────────────────────────
+// VERIFY LOGIN OTP – final step after OTP
+// ─────────────────────────────────────────────────────────────────
+exports.verifyLoginOTP = async (req, res) => {
+  try {
+    const { email, otp, tempToken } = req.body;
+    if (!email || !otp || !tempToken) {
+      return res.status(400).json({ success: false, message: 'Email, OTP and temporary token required' });
+    }
+
+    // Verify temporary token
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+      if (decoded.purpose !== 'login_otp') throw new Error();
+    } catch (err) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired temporary token. Please login again.' });
+    }
+
+    const userRes = await pool.query(
+      `SELECT id, email, username, full_name, role, is_verified, otp_code, otp_expires_at
+       FROM users WHERE LOWER(email) = LOWER($1) AND id = $2`,
+      [email, decoded.userId]
+    );
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const user = userRes.rows[0];
+
+    if (user.otp_code !== otp) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+    if (new Date() > new Date(user.otp_expires_at)) {
+      return res.status(400).json({ success: false, message: 'OTP expired. Please login again.' });
+    }
+
+    // Clear OTP after successful login
+    await pool.query(`UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = $1`, [user.id]);
+
+    // Update last login timestamp
+    await pool.query(`UPDATE users SET last_login = NOW() WHERE id = $1`, [user.id]);
+
+    const finalToken = generateToken(user);
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token: finalToken,
+      user: formatUser(user),
+    });
+  } catch (error) {
+    console.error('Verify login OTP error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────
+// LOGOUT
+// ─────────────────────────────────────────────────────────────────
 exports.logout = (req, res) => {
   return res.status(200).json({ success: true, message: 'Logged out' });
 };
