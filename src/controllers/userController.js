@@ -1,8 +1,8 @@
 // src/controllers/userController.js
 const { query } = require('../config/database');
 const { validationResult } = require('express-validator');
-const { deleteFile } = require('../utils/fileUpload');
-const environment = require('../config/environment');
+// ❌ REMOVED: const { deleteFile } = require('../utils/fileUpload');
+// ❌ REMOVED: const environment = require('../config/environment');
 
 // ─────────────────────────────────────────────────────────────────
 // Public routes
@@ -84,12 +84,11 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// ✅ BECOME CREATOR – new method
+// ✅ BECOME CREATOR
 exports.becomeCreator = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1. Check current user
     const userCheck = await query(
       `SELECT id, role, is_creator FROM users WHERE id = $1`,
       [userId]
@@ -99,12 +98,10 @@ exports.becomeCreator = async (req, res) => {
     }
     const user = userCheck.rows[0];
 
-    // 2. Already a creator?
     if (user.role === 'creator' || user.is_creator === true) {
       return res.status(400).json({ status: 'error', message: 'You are already a creator' });
     }
 
-    // 3. Update user
     await query(
       `UPDATE users 
        SET role = 'creator', is_creator = true, updated_at = NOW() 
@@ -112,7 +109,6 @@ exports.becomeCreator = async (req, res) => {
       [userId]
     );
 
-    // 4. Fetch updated user data
     const updatedUser = await query(
       `SELECT id, username, email, full_name, role, is_creator, is_admin, profile_picture 
        FROM users WHERE id = $1`,
@@ -281,7 +277,6 @@ exports.getCreatorAnalytics = async (req, res) => {
 };
 
 exports.getCreatorStats = async (req, res) => {
-  // similar to getCreatorAnalytics but maybe different name
   return exports.getCreatorAnalytics(req, res);
 };
 
