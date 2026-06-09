@@ -1,8 +1,7 @@
 // src/controllers/userController.js
 const { query } = require('../config/database');
 const { validationResult } = require('express-validator');
-// const { deleteFile } = require('../utils/fileUpload'); // REMOVED – not used
-// const environment = require('../config/environment'); // REMOVED – not used
+// ❌ Unused imports removed: deleteFile, environment
 
 // ─────────────────────────────────────────────────────────────────
 // Public routes
@@ -10,13 +9,13 @@ const { validationResult } = require('express-validator');
 
 exports.getGlobalStats = async (req, res) => {
   try {
-    // Try to use `status` column if it exists
+    // Primary query using `status` column if available
     const result = await query(`
       SELECT 
-        (SELECT COUNT(*) FROM series WHERE status = 'published') as total_series,
-        (SELECT COUNT(*) FROM users WHERE is_creator = true) as total_creators,
-        (SELECT COUNT(*) FROM episodes) as total_episodes,
-        (SELECT COUNT(*) FROM users) as total_users
+        (SELECT COUNT(*) FROM series WHERE status = 'published') as series_count,
+        (SELECT COUNT(*) FROM users WHERE is_creator = true) as creators_count,
+        (SELECT COUNT(*) FROM episodes) as episodes_count,
+        (SELECT COUNT(*) FROM users) as users_count
     `);
     res.status(200).json({ status: 'success', data: result.rows[0] });
   } catch (error) {
@@ -24,10 +23,10 @@ exports.getGlobalStats = async (req, res) => {
     console.warn('⚠️ Status column missing – using fallback query');
     const fallback = await query(`
       SELECT 
-        (SELECT COUNT(*) FROM series) as total_series,
-        (SELECT COUNT(*) FROM users WHERE is_creator = true) as total_creators,
-        (SELECT COUNT(*) FROM episodes) as total_episodes,
-        (SELECT COUNT(*) FROM users) as total_users
+        (SELECT COUNT(*) FROM series) as series_count,
+        (SELECT COUNT(*) FROM users WHERE is_creator = true) as creators_count,
+        (SELECT COUNT(*) FROM episodes) as episodes_count,
+        (SELECT COUNT(*) FROM users) as users_count
     `);
     res.status(200).json({ status: 'success', data: fallback.rows[0] });
   }
