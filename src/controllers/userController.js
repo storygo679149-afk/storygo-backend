@@ -8,8 +8,13 @@ const { validationResult } = require('express-validator');
 // ─────────────────────────────────────────────────────────────────
 
 exports.getGlobalStats = async (req, res) => {
+  const defaultStats = {
+    series_count: 0,
+    creators_count: 0,
+    episodes_count: 0,
+    users_count: 0,
+  };
   try {
-    // Primary query using `status` column if available
     const result = await query(`
       SELECT 
         (SELECT COUNT(*) FROM series WHERE status = 'published') as series_count,
@@ -17,18 +22,15 @@ exports.getGlobalStats = async (req, res) => {
         (SELECT COUNT(*) FROM episodes) as episodes_count,
         (SELECT COUNT(*) FROM users) as users_count
     `);
-    res.status(200).json({ status: 'success', data: result.rows[0] });
+    if (result.rows && result.rows[0]) {
+      return res.status(200).json({ status: 'success', data: result.rows[0] });
+    } else {
+      return res.status(200).json({ status: 'success', data: defaultStats });
+    }
   } catch (error) {
-    // Fallback: ignore `status` column (count all series)
-    console.warn('⚠️ Status column missing – using fallback query');
-    const fallback = await query(`
-      SELECT 
-        (SELECT COUNT(*) FROM series) as series_count,
-        (SELECT COUNT(*) FROM users WHERE is_creator = true) as creators_count,
-        (SELECT COUNT(*) FROM episodes) as episodes_count,
-        (SELECT COUNT(*) FROM users) as users_count
-    `);
-    res.status(200).json({ status: 'success', data: fallback.rows[0] });
+    console.error('Global stats error (fallback to zeros):', error.message);
+    // Always return 200 OK with default zeros to prevent frontend crash
+    return res.status(200).json({ status: 'success', data: defaultStats });
   }
 };
 
