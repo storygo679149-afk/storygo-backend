@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { requireAdmin } = require('../middleware/adminAuth');
+const { authenticate, authorizeAdmin } = require('../middleware/authenticate');
 const adminController = require('../controllers/adminController');
 
-// All routes require admin authentication
-router.use(requireAdmin);
+// All admin routes require authentication AND admin role
+router.use(authenticate);
+router.use(authorizeAdmin);
 
 // Dashboard
 router.get('/dashboard', adminController.getDashboardStats);
-// Add this line inside the router (after authentication middleware)
 router.get('/database/users', adminController.getAllUsersData);
 
 // Users
@@ -44,7 +44,8 @@ router.get('/storage', adminController.getStorageStats);
 
 // Audit logs
 router.get('/audit-logs', adminController.getAuditLogs);
-// ... existing routes
+
+// Creators & listeners
 router.get('/creators', adminController.getCreators);
 router.get('/listeners/cities', adminController.getListenerCities);
 
