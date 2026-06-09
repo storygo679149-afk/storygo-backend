@@ -21,7 +21,6 @@ const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, environment.JWT_SECRET);
 
-    // ✅ Include role field as well
     const result = await query(
       `SELECT id, username, email, role, is_creator, is_admin, is_active
        FROM users WHERE id = $1 AND is_active = true`,
@@ -82,7 +81,6 @@ const authorizeCreator = (req, res, next) => {
   next();
 };
 
-// ✅ NEW: Middleware to require admin role
 const authorizeAdmin = (req, res, next) => {
   if (!req.user) return res.status(401).json({ status: 'error', message: 'Authentication required.' });
   if (!req.user.is_admin) return res.status(403).json({ status: 'error', message: 'Access denied. Admin account required.' });
