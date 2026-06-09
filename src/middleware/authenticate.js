@@ -35,6 +35,7 @@ const authenticate = async (req, res, next) => {
     }
 
     req.user = result.rows[0];
+    console.log(`Authenticated: ${req.user.email}, is_admin: ${req.user.is_admin}, role: ${req.user.role}`);
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -83,7 +84,10 @@ const authorizeCreator = (req, res, next) => {
 
 const authorizeAdmin = (req, res, next) => {
   if (!req.user) return res.status(401).json({ status: 'error', message: 'Authentication required.' });
-  if (!req.user.is_admin) return res.status(403).json({ status: 'error', message: 'Access denied. Admin account required.' });
+  // Allow if either is_admin == true OR role == 'admin'
+  if (!req.user.is_admin && req.user.role !== 'admin') {
+    return res.status(403).json({ status: 'error', message: 'Access denied. Admin account required.' });
+  }
   next();
 };
 
