@@ -32,7 +32,7 @@ router.get('/subscriptions', adminController.getSubscriptions);
 router.get('/ratings', adminController.getAllRatings);
 router.delete('/ratings/:id', adminController.deleteRating);
 
-// Subscription Plans
+// Plans
 router.put('/plans/:id', adminController.updatePlan);
 router.post('/plans', adminController.createPlan);
 
