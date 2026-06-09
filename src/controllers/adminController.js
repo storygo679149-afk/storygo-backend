@@ -1,3 +1,4 @@
+// src/controllers/adminController.js
 const { query } = require('../config/database');
 const cloudinary = require('../config/cloudinary').cloudinary;
 
@@ -16,10 +17,10 @@ exports.getDashboardStats = async (req, res) => {
         COALESCE((SELECT SUM(amount) FROM purchases WHERE status = 'succeeded'), 0) AS total_revenue,
         (SELECT COUNT(*) FROM users WHERE created_at > CURRENT_DATE - INTERVAL '7 days') AS new_users_this_week
     `);
-    res.json(stats.rows[0]);
+    res.json({ status: 'success', data: stats.rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error('Dashboard stats error:', err);
+    res.status(500).json({ status: 'error', message: err.message });
   }
 };
 
@@ -76,67 +77,100 @@ exports.getAllUsers = async (req, res) => {
 exports.toggleUserStatus = async (req, res) => {
   const { userId } = req.params;
   const { is_active } = req.body;
-  await query('UPDATE users SET is_active = $1 WHERE id = $2', [is_active, userId]);
-  res.json({ success: true });
+  try {
+    await query('UPDATE users SET is_active = $1 WHERE id = $2', [is_active, userId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Toggle user status error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update user status' });
+  }
 };
 
 // ============================================
 // SERIES
 // ============================================
 exports.getAllSeries = async (req, res) => {
-  const result = await query(`
-    SELECT s.*, u.full_name AS creator_name
-    FROM series s JOIN users u ON s.creator_id = u.id
-    ORDER BY s.created_at DESC
-  `);
-  res.json(result.rows);
+  try {
+    const result = await query(`
+      SELECT s.*, u.full_name AS creator_name
+      FROM series s 
+      JOIN users u ON s.creator_id = u.id
+      ORDER BY s.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get all series error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch series' });
+  }
 };
 
 exports.updateSeriesStatus = async (req, res) => {
   const { seriesId } = req.params;
   const { is_active } = req.body;
-  await query('UPDATE series SET is_active = $1 WHERE id = $2', [is_active, seriesId]);
-  res.json({ success: true });
+  try {
+    await query('UPDATE series SET is_active = $1 WHERE id = $2', [is_active, seriesId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update series status error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update series status' });
+  }
 };
 
 // ============================================
 // EPISODES
 // ============================================
 exports.getAllEpisodes = async (req, res) => {
-  const result = await query(`
-    SELECT e.*, s.title AS series_title, s.id AS series_id
-    FROM episodes e JOIN series s ON e.series_id = s.id
-    ORDER BY e.created_at DESC
-  `);
-  res.json(result.rows);
+  try {
+    const result = await query(`
+      SELECT e.*, s.title AS series_title, s.id AS series_id
+      FROM episodes e 
+      JOIN series s ON e.series_id = s.id
+      ORDER BY e.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get all episodes error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch episodes' });
+  }
 };
 
 // ============================================
 // PAYMENTS
 // ============================================
 exports.getPayments = async (req, res) => {
-  const result = await query(`
-    SELECT p.*, u.username, u.email
-    FROM purchases p JOIN users u ON p.user_id = u.id
-    ORDER BY p.created_at DESC
-    LIMIT 100
-  `);
-  res.json(result.rows);
+  try {
+    const result = await query(`
+      SELECT p.*, u.username, u.email
+      FROM purchases p 
+      JOIN users u ON p.user_id = u.id
+      ORDER BY p.created_at DESC
+      LIMIT 100
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get payments error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch payments' });
+  }
 };
 
 // ============================================
 // SUBSCRIPTIONS
 // ============================================
 exports.getSubscriptions = async (req, res) => {
-  const result = await query(`
-    SELECT us.*, u.username, u.email, p.name AS plan_name
-    FROM user_subscriptions us
-    JOIN users u ON us.user_id = u.id
-    JOIN subscription_plans p ON us.plan_id = p.id
-    ORDER BY us.created_at DESC
-    LIMIT 100
-  `);
-  res.json(result.rows);
+  try {
+    const result = await query(`
+      SELECT us.*, u.username, u.email, p.name AS plan_name
+      FROM user_subscriptions us
+      JOIN users u ON us.user_id = u.id
+      JOIN subscription_plans p ON us.plan_id = p.id
+      ORDER BY us.created_at DESC
+      LIMIT 100
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get subscriptions error:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to fetch subscriptions' });
+  }
 };
 
 // ============================================
@@ -206,7 +240,7 @@ exports.createPlan = async (req, res) => {
 };
 
 // ============================================
-// CREATOR REVENUE
+// CREATOR REVENUE SHARE
 // ============================================
 exports.updateCreatorRevenueShare = async (req, res) => {
   const { id } = req.params;
@@ -226,13 +260,11 @@ exports.updateCreatorRevenueShare = async (req, res) => {
 exports.getStorageStats = async (req, res) => {
   try {
     const usage = await cloudinary.api.usage();
-
-    const dbStats = await query(
-      `SELECT COUNT(*) AS total_episodes,
-              COALESCE(SUM(file_size_bytes), 0) AS total_size_bytes
-       FROM episodes WHERE is_active = true`
-    );
-
+    const dbStats = await query(`
+      SELECT COUNT(*) AS total_episodes,
+             COALESCE(SUM(file_size_bytes), 0) AS total_size_bytes
+      FROM episodes WHERE is_active = true
+    `);
     res.json({
       status: 'success',
       data: {
@@ -257,6 +289,10 @@ exports.getStorageStats = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Failed to fetch storage stats' });
   }
 };
+
+// ============================================
+// CREATORS
+// ============================================
 exports.getCreators = async (req, res) => {
   try {
     const result = await query(`
@@ -284,6 +320,10 @@ exports.getCreators = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Failed to load creators' });
   }
 };
+
+// ============================================
+// LISTENER CITIES
+// ============================================
 exports.getListenerCities = async (req, res) => {
   try {
     const result = await query(`
@@ -299,6 +339,7 @@ exports.getListenerCities = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Failed to load data' });
   }
 };
+
 // ============================================
 // AUDIT LOGS
 // ============================================
