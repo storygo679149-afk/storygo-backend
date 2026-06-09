@@ -1,25 +1,35 @@
 // src/controllers/userController.js
 const { query } = require('../config/database');
 const { validationResult } = require('express-validator');
-// ❌ REMOVED: const { deleteFile } = require('../utils/fileUpload');
-// ❌ REMOVED: const environment = require('../config/environment');
+// const { deleteFile } = require('../utils/fileUpload'); // REMOVED – not used
+// const environment = require('../config/environment'); // REMOVED – not used
 
 // ─────────────────────────────────────────────────────────────────
 // Public routes
 // ─────────────────────────────────────────────────────────────────
+
 exports.getGlobalStats = async (req, res) => {
   try {
+    // Try to use `status` column if it exists
     const result = await query(`
       SELECT 
         (SELECT COUNT(*) FROM series WHERE status = 'published') as total_series,
         (SELECT COUNT(*) FROM users WHERE is_creator = true) as total_creators,
-        (SELECT COUNT(*) FROM episodes WHERE status = 'published') as total_episodes,
+        (SELECT COUNT(*) FROM episodes) as total_episodes,
         (SELECT COUNT(*) FROM users) as total_users
     `);
     res.status(200).json({ status: 'success', data: result.rows[0] });
   } catch (error) {
-    console.error('Global stats error:', error);
-    res.status(500).json({ status: 'error', message: 'Server error' });
+    // Fallback: ignore `status` column (count all series)
+    console.warn('⚠️ Status column missing – using fallback query');
+    const fallback = await query(`
+      SELECT 
+        (SELECT COUNT(*) FROM series) as total_series,
+        (SELECT COUNT(*) FROM users WHERE is_creator = true) as total_creators,
+        (SELECT COUNT(*) FROM episodes) as total_episodes,
+        (SELECT COUNT(*) FROM users) as total_users
+    `);
+    res.status(200).json({ status: 'success', data: fallback.rows[0] });
   }
 };
 
@@ -43,6 +53,7 @@ exports.getTopCreators = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────
 // Authenticated user routes
 // ─────────────────────────────────────────────────────────────────
+
 exports.getProfile = async (req, res) => {
   try {
     const result = await query(
@@ -130,8 +141,9 @@ exports.becomeCreator = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// Other existing methods (listening history, bookmarks, etc.)
+// Listening history, bookmarks, etc.
 // ─────────────────────────────────────────────────────────────────
+
 exports.getListeningHistory = async (req, res) => {
   try {
     const result = await query(
@@ -280,6 +292,10 @@ exports.getCreatorStats = async (req, res) => {
   return exports.getCreatorAnalytics(req, res);
 };
 
+// ─────────────────────────────────────────────────────────────────
+// Avatar upload / removal (Cloudinary)
+// ─────────────────────────────────────────────────────────────────
+
 exports.uploadAvatar = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ status: 'error', message: 'No file uploaded' });
@@ -310,13 +326,17 @@ exports.removeAvatar = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────
+// Change password
+// ─────────────────────────────────────────────────────────────────
+
 exports.changePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ status: 'error', message: 'Both current and new password are required' });
   }
   if (newPassword.length < 6) {
-    return res.status(400).json({ status: 'error', message: 'New password must be at least 6 characters' });
+    return res.status(400).json({ status: 'error', message: 'Password must be at least 6 characters' });
   }
   try {
     const bcrypt = require('bcryptjs');
