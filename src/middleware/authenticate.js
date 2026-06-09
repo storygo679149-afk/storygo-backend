@@ -21,9 +21,9 @@ const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, environment.JWT_SECRET);
 
-    // Only fetch essential fields – lightweight
+    // ✅ Include role field as well
     const result = await query(
-      `SELECT id, username, email, is_creator, is_admin, is_active
+      `SELECT id, username, email, role, is_creator, is_admin, is_active
        FROM users WHERE id = $1 AND is_active = true`,
       [decoded.userId]
     );
@@ -62,7 +62,7 @@ const optionalAuth = async (req, res, next) => {
     if (token) {
       const decoded = jwt.verify(token, environment.JWT_SECRET);
       const result = await query(
-        `SELECT id, username, email, is_creator, is_admin, is_active
+        `SELECT id, username, email, role, is_creator, is_admin, is_active
          FROM users WHERE id = $1 AND is_active = true`,
         [decoded.userId]
       );
@@ -79,6 +79,13 @@ const optionalAuth = async (req, res, next) => {
 const authorizeCreator = (req, res, next) => {
   if (!req.user) return res.status(401).json({ status: 'error', message: 'Authentication required.' });
   if (!req.user.is_creator) return res.status(403).json({ status: 'error', message: 'Access denied. Creator account required.' });
+  next();
+};
+
+// ✅ NEW: Middleware to require admin role
+const authorizeAdmin = (req, res, next) => {
+  if (!req.user) return res.status(401).json({ status: 'error', message: 'Authentication required.' });
+  if (!req.user.is_admin) return res.status(403).json({ status: 'error', message: 'Access denied. Admin account required.' });
   next();
 };
 
@@ -108,4 +115,4 @@ const authorizeOwner = (resourceType) => {
   };
 };
 
-module.exports = { authenticate, optionalAuth, authorizeCreator, authorizeOwner };
+module.exports = { authenticate, optionalAuth, authorizeCreator, authorizeAdmin, authorizeOwner };
