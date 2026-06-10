@@ -35,7 +35,6 @@ app.set('trust proxy', 1);
 
 app.use('/api/auth', require('./src/routes/authRoutes'));
 app.use('/api/novels', require('./src/routes/novelRoutes'));
-app.use('/api/admin/schedule', require('./src/routes/scheduleRoutes')); // keep only schedule if needed
 app.use('/api/users', require('./src/routes/userRoutes'));
 app.use('/api/series', require('./src/routes/seriesRoutes'));
 app.use('/api/episodes', require('./src/routes/episodeRoutes'));
@@ -44,8 +43,6 @@ app.use('/api/activity', require('./src/routes/activityRoutes'));
 app.use('/api/search', require('./src/routes/searchRoutes'));
 app.use('/api/trending', require('./src/routes/trendingRoutes'));
 app.use('/api/payments', require('./src/routes/paymentRoutes'));
-// ❌ ADMIN ROUTES REMOVED – delete or comment the next line:
-// app.use('/api/admin', require('./src/routes/adminRoutes'));
 
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
