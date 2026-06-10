@@ -1,5 +1,5 @@
+// src/middleware/authenticate.js
 const jwt = require('jsonwebtoken');
-const environment = require('../config/environment');
 const { query } = require('../config/database');
 
 const authenticate = async (req, res, next) => {
@@ -19,10 +19,10 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, environment.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const result = await query(
-      `SELECT id, username, email, role, is_creator, is_admin, is_active
+      `SELECT id, username, email, role, is_creator, is_active
        FROM users WHERE id = $1 AND is_active = true`,
       [decoded.userId]
     );
@@ -35,7 +35,6 @@ const authenticate = async (req, res, next) => {
     }
 
     req.user = result.rows[0];
-    console.log(`Authenticated: ${req.user.email}, is_admin: ${req.user.is_admin}, role: ${req.user.role}`);
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -60,9 +59,9 @@ const optionalAuth = async (req, res, next) => {
     }
 
     if (token) {
-      const decoded = jwt.verify(token, environment.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const result = await query(
-        `SELECT id, username, email, role, is_creator, is_admin, is_active
+        `SELECT id, username, email, role, is_creator, is_active
          FROM users WHERE id = $1 AND is_active = true`,
         [decoded.userId]
       );
@@ -79,15 +78,6 @@ const optionalAuth = async (req, res, next) => {
 const authorizeCreator = (req, res, next) => {
   if (!req.user) return res.status(401).json({ status: 'error', message: 'Authentication required.' });
   if (!req.user.is_creator) return res.status(403).json({ status: 'error', message: 'Access denied. Creator account required.' });
-  next();
-};
-
-const authorizeAdmin = (req, res, next) => {
-  if (!req.user) return res.status(401).json({ status: 'error', message: 'Authentication required.' });
-  // Allow if either is_admin == true OR role == 'admin'
-  if (!req.user.is_admin && req.user.role !== 'admin') {
-    return res.status(403).json({ status: 'error', message: 'Access denied. Admin account required.' });
-  }
   next();
 };
 
@@ -117,4 +107,4 @@ const authorizeOwner = (resourceType) => {
   };
 };
 
-module.exports = { authenticate, optionalAuth, authorizeCreator, authorizeAdmin, authorizeOwner };
+module.exports = { authenticate, optionalAuth, authorizeCreator, authorizeOwner };
