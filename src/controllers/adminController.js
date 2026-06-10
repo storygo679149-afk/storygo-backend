@@ -71,9 +71,10 @@ exports.updateUserStatus = async (req, res) => {
   const ip = req.ip;
   try {
     if (action === 'ban') {
-      await query('UPDATE users SET is_active = false, status = $1 WHERE id = $2', ['banned', id]);
+      // Just set is_active to false, no status column
+      await query('UPDATE users SET is_active = false WHERE id = $1', [id]);
     } else if (action === 'suspend') {
-      await query('UPDATE users SET is_active = false, status = $1 WHERE id = $2', ['suspended', id]);
+      await query('UPDATE users SET is_active = false WHERE id = $1', [id]);
     } else if (action === 'warn') {
       await query('UPDATE users SET warning_count = COALESCE(warning_count,0) + 1 WHERE id = $1', [id]);
     } else {
@@ -86,7 +87,6 @@ exports.updateUserStatus = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Server error' });
   }
 };
-
 // ======================= 2. CREATOR ONBOARDING =======================
 
 // Get pending creator applications
