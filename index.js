@@ -43,6 +43,7 @@ app.use('/api/activity', require('./src/routes/activityRoutes'));
 app.use('/api/search', require('./src/routes/searchRoutes'));
 app.use('/api/trending', require('./src/routes/trendingRoutes'));
 app.use('/api/payments', require('./src/routes/paymentRoutes'));
+app.use('/api/notifications', require('./src/routes/notificationRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
 
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
