@@ -2,7 +2,6 @@ const { query } = require('../config/database');
 
 exports.getActiveContests = async (req, res) => {
   try {
-    const now = new Date();
     const result = await query(`
       SELECT * FROM contests
       WHERE status = 'active' AND start_date <= NOW() AND end_date >= NOW()
@@ -34,7 +33,6 @@ exports.getContestDetails = async (req, res) => {
   try {
     const contest = await query('SELECT * FROM contests WHERE id = $1', [id]);
     if (contest.rows.length === 0) return res.status(404).json({ status: 'error', message: 'Contest not found' });
-    // Check if user already submitted
     let hasSubmitted = false;
     if (req.user) {
       const submission = await query('SELECT id FROM contest_submissions WHERE contest_id = $1 AND creator_id = $2', [id, req.user.id]);
@@ -52,7 +50,6 @@ exports.submitStory = async (req, res) => {
   const { title, story, cover_image_url } = req.body;
   const userId = req.user.id;
   try {
-    // Check if contest is still open
     const contest = await query('SELECT end_date FROM contests WHERE id = $1', [id]);
     if (contest.rows.length === 0) return res.status(404).json({ status: 'error', message: 'Contest not found' });
     if (new Date(contest.rows[0].end_date) < new Date()) {
