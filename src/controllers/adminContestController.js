@@ -1,5 +1,17 @@
 const { query } = require('../config/database');
-const { logAdminAction } = require('./adminController'); // reuse helper
+
+// Helper: log admin action (if you have a logger, use it; otherwise optional)
+const logAdminAction = async (adminId, action, targetType, targetId, details = {}, ip = null) => {
+  try {
+    await query(
+      `INSERT INTO admin_audit_logs (admin_id, action, target_type, target_id, details, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [adminId, action, targetType, targetId, details, ip]
+    );
+  } catch (err) {
+    console.error('Log error:', err.message);
+  }
+};
 
 exports.createContest = async (req, res) => {
   const { title, description, theme, start_date, end_date, background_image_url } = req.body;
@@ -13,7 +25,7 @@ exports.createContest = async (req, res) => {
     res.json({ status: 'success', data: result.rows[0] });
   } catch (err) {
     console.error('Create contest error:', err);
-    res.status(500).json({ status: 'error', message: 'Server error' });
+    res.status(500).json({ status: 'error', message: err.message });
   }
 };
 
@@ -120,7 +132,6 @@ exports.determineWinner = async (req, res) => {
     `, [id]);
     if (submissions.rows.length === 0) return res.json({ status: 'success', winner: null });
     const winner = submissions.rows[0];
-    // Optionally mark contest as ended
     await query('UPDATE contests SET status = $1 WHERE id = $2', ['ended', id]);
     res.json({ status: 'success', winner });
   } catch (err) {
