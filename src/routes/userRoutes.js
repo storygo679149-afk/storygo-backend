@@ -9,6 +9,7 @@ const { avatarUpload } = require('../middleware/upload');
 // Public routes (no auth)
 router.get('/stats/global', userController.getGlobalStats);
 router.get('/top-creators', userController.getTopCreators);
+router.get('/creator/:username', optionalAuth, userController.getCreatorProfile); 
 
 // All routes below require authentication
 router.use(authenticate);
