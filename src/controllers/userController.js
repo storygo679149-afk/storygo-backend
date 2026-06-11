@@ -141,6 +141,65 @@ exports.becomeCreator = async (req, res) => {
   }
 };
 
+// ========== Public Creator Profile ==========
+exports.getCreatorProfile = async (req, res) => {
+  const { username } = req.params;
+  try {
+    // Get user profile (only public fields)
+    const userRes = await query(`
+      SELECT id, username, full_name, profile_picture, creator_bio, is_creator, created_at
+      FROM users
+      WHERE username = $1 AND is_creator = true
+    `, [username]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'Creator not found' });
+    }
+    const user = userRes.rows[0];
+
+    // Get stats
+    const statsRes = await query(`
+      SELECT 
+        (SELECT COUNT(*) FROM series WHERE creator_id = $1) as total_series,
+        (SELECT COUNT(*) FROM episodes e JOIN series s ON e.series_id = s.id WHERE s.creator_id = $1) as total_episodes,
+        (SELECT COUNT(*) FROM followers WHERE following_id = $1) as followers_count
+    `, [user.id]);
+
+    // Get recent series
+    const seriesRes = await query(`
+      SELECT id, title, cover_image_url, thumbnail_url, created_at
+      FROM series
+      WHERE creator_id = $1 AND status = 'published'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `, [user.id]);
+
+    // Check if the viewer is following this creator (if logged in)
+    let isFollowing = false;
+    if (req.user && req.user.id !== user.id) {
+      const followRes = await query(`
+        SELECT 1 FROM followers WHERE follower_id = $1 AND following_id = $2
+      `, [req.user.id, user.id]);
+      isFollowing = followRes.rows.length > 0;
+    }
+
+    res.json({
+      status: 'success',
+      data: {
+        ...user,
+        total_series: parseInt(statsRes.rows[0].total_series),
+        total_episodes: parseInt(statsRes.rows[0].total_episodes),
+        followers_count: parseInt(statsRes.rows[0].followers_count),
+        recent_series: seriesRes.rows,
+        is_following: isFollowing
+      }
+    });
+  } catch (err) {
+    console.error('Get creator profile error:', err);
+    res.status(500).json({ status: 'error', message: 'Server error' });
+  }
+};
+
+
 // ─────────────────────────────────────────────────────────────────
 // Listening history, bookmarks, etc.
 // ─────────────────────────────────────────────────────────────────
