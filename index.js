@@ -44,10 +44,14 @@ app.use('/api/search', require('./src/routes/searchRoutes'));
 app.use('/api/trending', require('./src/routes/trendingRoutes'));
 app.use('/api/payments', require('./src/routes/paymentRoutes'));
 app.use('/api/notifications', require('./src/routes/notificationRoutes'));
-app.use('/api/admin', require('./src/routes/adminRoutes'));
-// ✅ Place this BEFORE the general admin routes
+
+// ✅ User‑facing contest routes
+app.use('/api/contests', require('./src/routes/contestRoutes'));
+
+// ✅ Admin contest routes (must be mounted BEFORE the general admin routes)
 app.use('/api/admin/contests', require('./src/routes/adminContestRoutes'));
-// Then the catch‑all admin routes
+
+// ✅ General admin routes (catch‑all for other /api/admin/*)
 app.use('/api/admin', require('./src/routes/adminRoutes'));
 
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
