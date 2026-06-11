@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-const { authenticate } = require('../middleware/authenticate');
+const { authenticate, optionalAuth } = require('../middleware/authenticate'); // ✅ added optionalAuth
 const { validate } = require('../middleware/validate');
 const { body, param } = require('express-validator');
 const { avatarUpload } = require('../middleware/upload');
@@ -9,7 +9,7 @@ const { avatarUpload } = require('../middleware/upload');
 // Public routes (no auth)
 router.get('/stats/global', userController.getGlobalStats);
 router.get('/top-creators', userController.getTopCreators);
-router.get('/creator/:username', optionalAuth, userController.getCreatorProfile); 
+router.get('/creator/:username', optionalAuth, userController.getCreatorProfile); // ✅ uses optionalAuth
 
 // All routes below require authentication
 router.use(authenticate);
@@ -21,7 +21,7 @@ router.put('/profile', validate([
   body('creator_bio').optional().trim().isLength({ max: 1000 })
 ]), userController.updateProfile);
 
-router.put('/become-creator', userController.becomeCreator);   // ✅ Only once, after authenticate
+router.put('/become-creator', userController.becomeCreator);
 
 router.get('/listening-history', userController.getListeningHistory);
 router.get('/bookmarks', userController.getBookmarks);
@@ -34,7 +34,7 @@ router.get('/followers', userController.getFollowers);
 router.get('/creator-analytics', userController.getCreatorAnalytics);
 router.get('/creator-stats', userController.getCreatorStats);
 
-// Avatar & password routes
+// Avatar & password
 router.post('/avatar', avatarUpload, userController.uploadAvatar);
 router.delete('/avatar', userController.removeAvatar);
 router.post('/change-password', userController.changePassword);
