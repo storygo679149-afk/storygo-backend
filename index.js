@@ -30,7 +30,6 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(cookieParser());
-app.use(passport.initialize());
 app.set('trust proxy', 1);
 
 app.use('/api/auth', require('./src/routes/authRoutes'));
