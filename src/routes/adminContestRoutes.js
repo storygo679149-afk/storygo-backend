@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate, authorizeAdmin } = require('../middleware/authenticate');
 const adminContest = require('../controllers/adminContestController');
 
+router.get('/ping', (req, res) => res.json({ pong: true }));
 // All admin contest routes require authentication and admin role
 router.use(authenticate);
 router.use(authorizeAdmin);
