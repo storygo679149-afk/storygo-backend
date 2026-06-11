@@ -1,6 +1,5 @@
 const { query } = require('../config/database');
 
-// Helper: log admin action (if you have a logger, use it; otherwise optional)
 const logAdminAction = async (adminId, action, targetType, targetId, details = {}, ip = null) => {
   try {
     await query(
