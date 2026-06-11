@@ -45,8 +45,10 @@ app.use('/api/trending', require('./src/routes/trendingRoutes'));
 app.use('/api/payments', require('./src/routes/paymentRoutes'));
 app.use('/api/notifications', require('./src/routes/notificationRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
+// ✅ Place this BEFORE the general admin routes
 app.use('/api/admin/contests', require('./src/routes/adminContestRoutes'));
-app.use('/api/contests', require('./src/routes/contestRoutes'));
+// Then the catch‑all admin routes
+app.use('/api/admin', require('./src/routes/adminRoutes'));
 
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
