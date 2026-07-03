@@ -8,6 +8,7 @@ const { validate } = require('../middleware/validate');
 const { body, param } = require('express-validator');
 const { uploadEpisode } = require('../middleware/upload');
 const { query } = require('../config/database');
+const { generateStreamUrl } = require('../utils/streaming');
 
 // ---------- PUBLIC ROUTES ----------
 
@@ -23,8 +24,10 @@ router.get('/play/:id', optionalAuth, async (req, res, next) => {
         next();
     } catch (err) { next(err); }
 }, checkPremiumAccess, adsMiddleware, (req, res) => {
-    // Return audio URL (or signed URL for security) and ad information
-    const audioUrl = req.episode.audio_url;
+    // Only issue a signed, short-lived stream URL — the raw Cloudinary
+    // URL never leaves the server. The premium check above has already
+    // run, so this URL is only handed out to users who are allowed it.
+    const audioUrl = generateStreamUrl(req, req.episode.id, req.user?.id);
     res.json({
         audioUrl,
         showAds: req.shouldShowAds,
