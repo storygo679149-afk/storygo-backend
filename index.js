@@ -37,6 +37,7 @@ app.use('/api/novels', require('./src/routes/novelRoutes'));
 app.use('/api/users', require('./src/routes/userRoutes'));
 app.use('/api/series', require('./src/routes/seriesRoutes'));
 app.use('/api/episodes', require('./src/routes/episodeRoutes'));
+app.use('/api/stream', require('./src/routes/streamRoutes'));
 app.use('/api/categories', require('./src/routes/categoryRoutes'));
 app.use('/api/activity', require('./src/routes/activityRoutes'));
 app.use('/api/search', require('./src/routes/searchRoutes'));
