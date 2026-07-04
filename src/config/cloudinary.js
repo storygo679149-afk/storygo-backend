@@ -58,9 +58,20 @@ const getSignedAudioUrl = (publicId, ttlSeconds = 300) => {
 /**
  * Lock down an ALREADY-UPLOADED public file, no re-upload needed.
  * Used by the one-time migration script for existing episodes.
+ *
+ * Two steps are needed:
+ * 1. Flip access_mode to 'authenticated' (controls future requests)
+ * 2. Explicitly invalidate the CDN's cached copy of the old public URL
+ *    (without this, a previously-cached copy can keep being served for
+ *    a while even after step 1)
  */
 const lockdownAudioAsset = async (publicId) => {
-  return cloudinary.api.update(publicId, { resource_type: 'video', access_mode: 'authenticated' });
+  await cloudinary.api.update(publicId, { resource_type: 'video', access_mode: 'authenticated' });
+  return cloudinary.uploader.explicit(publicId, {
+    resource_type: 'video',
+    type: 'upload',
+    invalidate: true
+  });
 };
 
 module.exports = { cloudinary, audioStorage, imageStorage, deleteFile, getSignedAudioUrl, lockdownAudioAsset };
