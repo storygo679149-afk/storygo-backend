@@ -82,7 +82,13 @@ router.get('/check-audio', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'publicId query param required' });
     }
     const { cloudinary } = require('../config/cloudinary');
-    const resource = await cloudinary.api.resource(publicId, { resource_type: 'video' });
+    let resource;
+    try {
+      resource = await cloudinary.api.resource(publicId, { resource_type: 'video', type: 'authenticated' });
+    } catch (e) {
+      // fall back to checking the legacy public location too
+      resource = await cloudinary.api.resource(publicId, { resource_type: 'video', type: 'upload' });
+    }
     return res.json({
       status: 'success',
       public_id: resource.public_id,
