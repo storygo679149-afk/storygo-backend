@@ -55,7 +55,7 @@ router.post('/lockdown-audio', async (req, res) => {
         await lockdownAudioAsset(row.audio_public_id);
         results.push({ episodeId: row.id, publicId: row.audio_public_id, status: 'locked' });
       } catch (err) {
-        results.push({ episodeId: row.id, publicId: row.audio_public_id, status: 'failed', error: err.message });
+        results.push({ episodeId: row.id, publicId: row.audio_public_id, status: 'failed', error: err?.error?.message || err.message });
       }
     }
 
@@ -92,7 +92,10 @@ router.get('/check-audio', async (req, res) => {
       created_at: resource.created_at
     });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error.message });
+    // Cloudinary's SDK often rejects with { error: { message, http_code } }
+    // rather than a plain Error, so surface whichever shape we got.
+    const detail = error?.error?.message || error?.message || JSON.stringify(error);
+    return res.status(500).json({ status: 'error', message: detail });
   }
 });
 
