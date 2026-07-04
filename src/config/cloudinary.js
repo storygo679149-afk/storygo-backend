@@ -11,9 +11,14 @@ cloudinary.config({
 
 console.log('Cloudinary config:', cloudinary.config().cloud_name);
 
+// IMPORTANT: new audio uploads get access_mode: 'authenticated'.
+// This means Cloudinary itself will refuse to serve the file unless the
+// request includes a valid, time-limited signature -- the raw delivery
+// URL alone (even if leaked) is useless without a fresh signature that
+// only our backend (holding the API secret) can generate.
 const audioStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3' }
+  params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3', access_mode: 'authenticated' }
 });
 
 const imageStorage = new CloudinaryStorage({
@@ -23,8 +28,6 @@ const imageStorage = new CloudinaryStorage({
 
 /**
  * Delete a file from Cloudinary
- * @param {string} publicId - Cloudinary public ID of the file
- * @param {string} resourceType - 'image' or 'video' (default 'image')
  */
 const deleteFile = async (publicId, resourceType = 'image') => {
   try {
@@ -36,4 +39,28 @@ const deleteFile = async (publicId, resourceType = 'image') => {
   }
 };
 
-module.exports = { cloudinary, audioStorage, imageStorage, deleteFile };
+/**
+ * Generate a fresh, short-lived signed URL for a private ("authenticated"
+ * access_mode) Cloudinary audio asset. Even someone holding this exact
+ * URL can't reuse it once it expires, and can't construct a valid one
+ * without our API secret.
+ */
+const getSignedAudioUrl = (publicId, ttlSeconds = 300) => {
+  return cloudinary.url(publicId, {
+    resource_type: 'video',
+    type: 'upload',
+    sign_url: true,
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + ttlSeconds
+  });
+};
+
+/**
+ * Lock down an ALREADY-UPLOADED public file, no re-upload needed.
+ * Used by the one-time migration script for existing episodes.
+ */
+const lockdownAudioAsset = async (publicId) => {
+  return cloudinary.api.update(publicId, { resource_type: 'video', access_mode: 'authenticated' });
+};
+
+module.exports = { cloudinary, audioStorage, imageStorage, deleteFile, getSignedAudioUrl, lockdownAudioAsset };
