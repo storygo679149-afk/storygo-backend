@@ -69,4 +69,31 @@ router.post('/lockdown-audio', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------
+// TEMP DIAGNOSTIC: check what Cloudinary actually recorded for a
+// given public_id (access_mode, type, url). Admin-only. Remove once
+// we've confirmed the upload fix is working correctly.
+// Usage: GET /api/admin/check-audio?publicId=pocket-fm/audio/xxxxx
+// ---------------------------------------------------------------
+router.get('/check-audio', async (req, res) => {
+  try {
+    const { publicId } = req.query;
+    if (!publicId) {
+      return res.status(400).json({ status: 'error', message: 'publicId query param required' });
+    }
+    const { cloudinary } = require('../config/cloudinary');
+    const resource = await cloudinary.api.resource(publicId, { resource_type: 'video' });
+    return res.json({
+      status: 'success',
+      public_id: resource.public_id,
+      access_mode: resource.access_mode,
+      type: resource.type,
+      secure_url: resource.secure_url,
+      created_at: resource.created_at
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 module.exports = router;
