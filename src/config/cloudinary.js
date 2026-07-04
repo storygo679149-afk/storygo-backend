@@ -11,14 +11,13 @@ cloudinary.config({
 
 console.log('Cloudinary config:', cloudinary.config().cloud_name);
 
-// IMPORTANT: new audio uploads get access_mode: 'authenticated'.
-// This means Cloudinary itself will refuse to serve the file unless the
-// request includes a valid, time-limited signature -- the raw delivery
-// URL alone (even if leaked) is useless without a fresh signature that
-// only our backend (holding the API secret) can generate.
+// IMPORTANT: new audio uploads use delivery type 'authenticated' (NOT
+// access_mode, which Cloudinary has deprecated and no longer enforces).
+// type: 'authenticated' means Cloudinary itself will refuse to serve the
+// file unless the request includes a valid, time-limited signature.
 const audioStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3', access_mode: 'authenticated' }
+  params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3', type: 'authenticated' }
 });
 
 const imageStorage = new CloudinaryStorage({
@@ -27,11 +26,13 @@ const imageStorage = new CloudinaryStorage({
 });
 
 /**
- * Delete a file from Cloudinary
+ * Delete a file from Cloudinary.
+ * @param {string} type - must match how the file was uploaded:
+ *   'upload' (legacy/public) or 'authenticated' (new/private).
  */
-const deleteFile = async (publicId, resourceType = 'image') => {
+const deleteFile = async (publicId, resourceType = 'image', type = 'upload') => {
   try {
-    const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+    const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type });
     return result;
   } catch (error) {
     console.error('Cloudinary delete error:', error);
@@ -41,14 +42,14 @@ const deleteFile = async (publicId, resourceType = 'image') => {
 
 /**
  * Generate a fresh, short-lived signed URL for a private ("authenticated"
- * access_mode) Cloudinary audio asset. Even someone holding this exact
- * URL can't reuse it once it expires, and can't construct a valid one
+ * type) Cloudinary audio asset. Even someone holding this exact URL
+ * can't reuse it once it expires, and can't construct a valid one
  * without our API secret.
  */
 const getSignedAudioUrl = (publicId, ttlSeconds = 300) => {
   return cloudinary.url(publicId, {
     resource_type: 'video',
-    type: 'upload',
+    type: 'authenticated',
     sign_url: true,
     secure: true,
     expires_at: Math.floor(Date.now() / 1000) + ttlSeconds
@@ -56,21 +57,17 @@ const getSignedAudioUrl = (publicId, ttlSeconds = 300) => {
 };
 
 /**
- * Lock down an ALREADY-UPLOADED public file, no re-upload needed.
- * Used by the one-time migration script for existing episodes.
- *
- * Two steps are needed:
- * 1. Flip access_mode to 'authenticated' (controls future requests)
- * 2. Explicitly invalidate the CDN's cached copy of the old public URL
- *    (without this, a previously-cached copy can keep being served for
- *    a while even after step 1)
+ * Convert an ALREADY-UPLOADED public ('upload' type) file to the private
+ * 'authenticated' type, in place -- no re-upload of the actual audio
+ * bytes needed. Used by the one-time migration for pre-existing episodes.
  */
 const lockdownAudioAsset = async (publicId) => {
-  await cloudinary.api.update(publicId, { resource_type: 'video', access_mode: 'authenticated' });
-  return cloudinary.uploader.explicit(publicId, {
+  return cloudinary.uploader.rename(publicId, publicId, {
     resource_type: 'video',
     type: 'upload',
-    invalidate: true
+    to_type: 'authenticated',
+    invalidate: true,
+    overwrite: true
   });
 };
 
