@@ -288,7 +288,7 @@ const episodeController = {
         const audioFile = req.files.audio[0];
         const oldEpisode = await client.query('SELECT audio_public_id FROM episodes WHERE id = $1', [id]);
         if (oldEpisode.rows[0]?.audio_public_id) {
-          await deleteFile(oldEpisode.rows[0].audio_public_id, 'video').catch(console.error);
+          await deleteFile(oldEpisode.rows[0].audio_public_id, 'video', 'authenticated').catch(console.error);
         }
         updateFields.push(`audio_url = $${paramCount}`);
         values.push(audioFile.path);
@@ -346,7 +346,7 @@ const episodeController = {
       const episode = episodeResult.rows[0];
 
       if (episode.audio_public_id) {
-        await deleteFile(episode.audio_public_id, 'video').catch(console.error);
+        await deleteFile(episode.audio_public_id, 'video', 'authenticated').catch(console.error);
       }
       if (episode.thumbnail_url) {
         const thumbPublicId = episode.thumbnail_url.split('/').pop().split('.')[0];
