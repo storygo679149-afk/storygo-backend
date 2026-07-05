@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { generateStreamUrl } = require('../utils/streaming');
 
 const searchController = {
   // Search series and episodes with duration filter
@@ -139,7 +140,10 @@ const searchController = {
            LIMIT $${epParams.length - 1} OFFSET $${epParams.length}`,
           epParams
         );
-        results.episodes = epRes.rows;
+        results.episodes = epRes.rows.map(ep => ({
+          ...ep,
+          audio_url: ep.audio_url ? generateStreamUrl(req, ep.id, userId) : ep.audio_url
+        }));
       }
 
       // Save search history if authenticated
