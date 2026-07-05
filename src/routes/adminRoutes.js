@@ -105,4 +105,28 @@ router.get('/check-audio', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------
+// TEMP DIAGNOSTIC: raw upload test, bypassing multer-storage-cloudinary
+// entirely, to see Cloudinary's FULL raw response for a type:'authenticated'
+// upload. Admin-only. Remove once diagnosed.
+// ---------------------------------------------------------------
+router.get('/test-authenticated-upload', async (req, res) => {
+  try {
+    const { cloudinary } = require('../config/cloudinary');
+    const result = await cloudinary.uploader.upload(
+      'https://res.cloudinary.com/demo/video/upload/dog.mp3',
+      {
+        resource_type: 'video',
+        type: 'authenticated',
+        folder: 'pocket-fm/test',
+        public_id: 'auth_test_' + Date.now()
+      }
+    );
+    return res.json({ status: 'success', raw_response: result });
+  } catch (error) {
+    const detail = error?.error?.message || error?.message || JSON.stringify(error);
+    return res.status(500).json({ status: 'error', message: detail });
+  }
+});
+
 module.exports = router;
