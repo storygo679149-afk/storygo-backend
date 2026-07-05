@@ -1,7 +1,7 @@
 const { query, getClient } = require('../config/database');
 const { deleteFile } = require('../config/cloudinary');
 const { clean } = require('../utils/sanitize');
-const { generateStreamUrl } = require('../utils/streaming');
+const { generateHlsStreamUrl } = require('../utils/streaming');
 
 const seriesController = {
   // Get all series with pagination and optional my_series filter
@@ -198,7 +198,7 @@ const seriesController = {
       // each episode's audio_url for a short-lived signed stream link.
       const episodes = result.rows.map(ep => ({
         ...ep,
-        audio_url: ep.audio_url ? generateStreamUrl(req, ep.id, userId) : ep.audio_url
+        audio_url: ep.audio_url ? generateHlsStreamUrl(req, ep.id, userId) : ep.audio_url
       }));
 
       return res.json({
