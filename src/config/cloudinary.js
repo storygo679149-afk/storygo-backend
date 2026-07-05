@@ -11,13 +11,22 @@ cloudinary.config({
 
 console.log('Cloudinary config:', cloudinary.config().cloud_name);
 
-// IMPORTANT: new audio uploads use delivery type 'authenticated' (NOT
-// access_mode, which Cloudinary has deprecated and no longer enforces).
-// type: 'authenticated' means Cloudinary itself will refuse to serve the
-// file unless the request includes a valid, time-limited signature.
+// New audio uploads use delivery type 'authenticated' (Cloudinary requires
+// a valid signature to serve the file at all), AND request an eager HLS
+// transformation -- Cloudinary transcodes the audio into an .m3u8 playlist
+// plus small encrypted-at-transport segment (.ts) files, so the browser
+// never fetches one clean downloadable MP3. This uses Cloudinary's own
+// transcoding, not our server, so it doesn't strain the Render free tier.
 const audioStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3', type: 'authenticated' }
+  params: {
+    folder: 'pocket-fm/audio',
+    resource_type: 'video',
+    format: 'mp3',
+    type: 'authenticated',
+    eager: [{ format: 'm3u8' }],
+    eager_async: false // wait for HLS to be ready before responding (fine for short audio files)
+  }
 });
 
 const imageStorage = new CloudinaryStorage({
@@ -27,8 +36,6 @@ const imageStorage = new CloudinaryStorage({
 
 /**
  * Delete a file from Cloudinary.
- * @param {string} type - must match how the file was uploaded:
- *   'upload' (legacy/public) or 'authenticated' (new/private).
  */
 const deleteFile = async (publicId, resourceType = 'image', type = 'upload') => {
   try {
@@ -41,10 +48,8 @@ const deleteFile = async (publicId, resourceType = 'image', type = 'upload') => 
 };
 
 /**
- * Generate a fresh, short-lived signed URL for a private ("authenticated"
- * type) Cloudinary audio asset. Even someone holding this exact URL
- * can't reuse it once it expires, and can't construct a valid one
- * without our API secret.
+ * Fresh, short-lived signed URL for the plain MP3 (kept as a fallback
+ * for any code path that still expects a single audio file).
  */
 const getSignedAudioUrl = (publicId, ttlSeconds = 300) => {
   return cloudinary.url(publicId, {
@@ -57,18 +62,40 @@ const getSignedAudioUrl = (publicId, ttlSeconds = 300) => {
 };
 
 /**
- * Convert an ALREADY-UPLOADED public ('upload' type) file to the private
- * 'authenticated' type, in place -- no re-upload of the actual audio
- * bytes needed. Used by the one-time migration for pre-existing episodes.
+ * Fresh, short-lived signed URL for the HLS manifest (.m3u8) of an
+ * episode. This is what the frontend player (via hls.js) should load.
+ */
+const getSignedHlsUrl = (publicId, ttlSeconds = 300) => {
+  return cloudinary.url(publicId, {
+    resource_type: 'video',
+    type: 'authenticated',
+    format: 'm3u8',
+    sign_url: true,
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + ttlSeconds
+  });
+};
+
+/**
+ * Convert an already-uploaded public file to private 'authenticated'
+ * type in place. Used by the one-time migration for pre-existing
+ * episodes. Also (re)requests the eager HLS transformation, since
+ * older uploads won't have one yet.
  */
 const lockdownAudioAsset = async (publicId) => {
-  return cloudinary.uploader.rename(publicId, publicId, {
+  await cloudinary.uploader.rename(publicId, publicId, {
     resource_type: 'video',
     type: 'upload',
     to_type: 'authenticated',
     invalidate: true,
     overwrite: true
   });
+  return cloudinary.uploader.explicit(publicId, {
+    resource_type: 'video',
+    type: 'authenticated',
+    eager: [{ format: 'm3u8' }],
+    eager_async: false
+  });
 };
 
-module.exports = { cloudinary, audioStorage, imageStorage, deleteFile, getSignedAudioUrl, lockdownAudioAsset };
+module.exports = { cloudinary, audioStorage, imageStorage, deleteFile, getSignedAudioUrl, getSignedHlsUrl, lockdownAudioAsset };
