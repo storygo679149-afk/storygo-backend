@@ -2,7 +2,7 @@ const { query, getClient } = require('../config/database');
 const { deleteFile } = require('../config/cloudinary');
 const geoip = require('geoip-lite');
 const { clean } = require('../utils/sanitize');
-const { generateStreamUrl } = require('../utils/streaming');
+const { generateHlsStreamUrl } = require('../utils/streaming');
 
 const episodeController = {
   // Get episode by ID
@@ -64,7 +64,7 @@ const episodeController = {
 
       // Never send the raw, permanent Cloudinary URL to the client.
       // Replace it with a short-lived signed streaming link instead.
-      episode.audio_url = generateStreamUrl(req, episode.id, userId);
+      episode.audio_url = generateHlsStreamUrl(req, episode.id, userId);
 
       return res.json({ status: 'success', data: { episode } });
     } catch (error) {
