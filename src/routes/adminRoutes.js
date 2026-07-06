@@ -129,4 +129,37 @@ router.get('/test-authenticated-upload', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------
+// TEMP DIAGNOSTIC: replicate the EXACT params real episode uploads use
+// (from middleware/upload.js DynamicCloudinaryStorage, 'audio' field),
+// so we can verify the real path works without needing a manual upload.
+// ---------------------------------------------------------------
+router.get('/test-real-episode-upload-path', async (req, res) => {
+  try {
+    const { cloudinary } = require('../config/cloudinary');
+    const result = await cloudinary.uploader.upload(
+      'https://res.cloudinary.com/demo/video/upload/dog.mp3',
+      {
+        folder: 'pocket-fm/test',
+        resource_type: 'video',
+        format: 'mp3',
+        type: 'authenticated',
+        chunk_size: 6000000,
+        eager: [{ format: 'mp3', audio_codec: 'mp3', audio_frequency: '44100', audio_bitrate: '128k' }],
+        eager_async: true,
+        public_id: 'real_path_test_' + Date.now()
+      }
+    );
+    return res.json({
+      status: 'success',
+      type: result.type,
+      secure_url: result.secure_url,
+      raw_response: result
+    });
+  } catch (error) {
+    const detail = error?.error?.message || error?.message || JSON.stringify(error);
+    return res.status(500).json({ status: 'error', message: detail });
+  }
+});
+
 module.exports = router;
