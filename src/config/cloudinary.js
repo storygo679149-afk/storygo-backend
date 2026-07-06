@@ -61,6 +61,7 @@ const getSignedHlsUrl = (publicId, ttlSeconds = 300) => {
     resource_type: 'video',
     type: 'authenticated',
     format: 'm3u8',
+    streaming_profile: 'auto',
     sign_url: true,
     secure: true,
     expires_at: Math.floor(Date.now() / 1000) + ttlSeconds
