@@ -25,6 +25,7 @@ class DynamicCloudinaryStorage extends CloudinaryStorage {
         folder: 'pocket-fm/audio',
         resource_type: 'video',
         format: 'mp3',
+        type: 'authenticated',
         chunk_size: 6000000,
         eager: [{ format: 'mp3', audio_codec: 'mp3', audio_frequency: '44100', audio_bitrate: '128k' }],
         eager_async: true,
@@ -63,7 +64,7 @@ const uploadEpisode = multer({
 const audioUpload = multer({
   storage: new CloudinaryStorage({
     cloudinary,
-    params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3' },
+    params: { folder: 'pocket-fm/audio', resource_type: 'video', format: 'mp3', type: 'authenticated' },
   }),
   fileFilter: (req, file, cb) => {
     if (ALLOWED_AUDIO_MIMES.includes(file.mimetype)) cb(null, true);
