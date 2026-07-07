@@ -1,5 +1,5 @@
 const { query } = require('../config/database');
-const { generateHlsStreamUrl } = require('../utils/streaming');
+const { generateStreamUrl } = require('../utils/streaming');
 
 const searchController = {
   // Search series and episodes with duration filter
@@ -142,7 +142,7 @@ const searchController = {
         );
         results.episodes = epRes.rows.map(ep => ({
           ...ep,
-          audio_url: ep.audio_url ? generateHlsStreamUrl(req, ep.id, userId) : ep.audio_url
+          audio_url: ep.audio_url ? generateStreamUrl(req, ep.id, userId) : ep.audio_url
         }));
       }
 
